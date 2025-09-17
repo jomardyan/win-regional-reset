@@ -15,6 +15,15 @@
 .PARAMETER Force
     Skip confirmation prompts
     
+.PARAMETER LogPath
+    Custom path for log file (optional)
+    
+.PARAMETER RestoreFromBackup
+    Path to backup directory to restore from
+    
+.PARAMETER ConfigFile
+    Path to configuration file with custom settings
+    
 .EXAMPLE
     .\Reset-RegionalSettings.ps1
     Resets to Polish (pl-PL) with confirmation
@@ -22,6 +31,10 @@
 .EXAMPLE
     .\Reset-RegionalSettings.ps1 -Locale "en-US" -Force
     Resets to English (US) without confirmation
+    
+.EXAMPLE
+    .\Reset-RegionalSettings.ps1 -RestoreFromBackup "C:\Temp\RegionalSettings_Backup_20231201_143022"
+    Restores settings from a backup
     
 .NOTES
     Requires Administrator privileges
@@ -33,8 +46,25 @@ param(
     [string]$Locale = "pl-PL",
     
     [Parameter(Mandatory=$false)]
-    [switch]$Force
+    [switch]$Force,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$LogPath,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$RestoreFromBackup,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$ConfigFile
 )
+
+# Initialize error handling and logging
+$ErrorActionPreference = "Stop"
+$script:LogFile = if ($LogPath) { $LogPath } else { "$env:TEMP\RegionalSettings_$(Get-Date -Format 'yyyyMMdd_HHmmss').log" }
+$script:BackupPath = "$env:TEMP\RegionalSettings_Backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+$script:OperationCount = 0
+$script:SuccessCount = 0
+$script:ErrorCount = 0
 
 # Define supported locales
 $SupportedLocales = @{
@@ -62,270 +92,1004 @@ if (-not $SupportedLocales.ContainsKey($Locale)) {
     exit 1
 }
 
-# Function to write colored output
+# Enhanced logging function
+function Write-Log {
+    param(
+        [string]$Message,
+        [string]$Level = "INFO",
+        [string]$Color = "White"
+    )
+    
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$timestamp] [$Level] $Message"
+    
+    # Write to console with color
+    Write-Host $logEntry -ForegroundColor $Color
+    
+    # Write to log file
+    try {
+        Add-Content -Path $script:LogFile -Value $logEntry -ErrorAction SilentlyContinue
+    }
+    catch {
+        # Ignore log file errors to prevent cascading failures
+    }
+}
+
+# Function to write colored output (legacy compatibility)
 function Write-ColorOutput {
     param(
         [string]$Message,
         [string]$Color = "White"
     )
-    Write-Host $Message -ForegroundColor $Color
+    Write-Log -Message $Message -Color $Color
 }
 
-# Function to backup registry
-function Backup-Registry {
-    param([string]$KeyPath, [string]$BackupName)
-    
+# Enhanced function to validate system compatibility
+function Test-SystemCompatibility {
     try {
-        $backupPath = "$env:TEMP\RegionalSettings_Backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-        if (-not (Test-Path $backupPath)) {
-            New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
+        $osVersion = [System.Environment]::OSVersion.Version
+        $isWindows10Plus = $osVersion.Major -ge 10
+        
+        if (-not $isWindows10Plus) {
+            Write-Log "WARNING: This script is designed for Windows 10/11. Current version: $($osVersion.ToString())" "WARN" "Yellow"
+            return $false
         }
         
-        $regFile = "$backupPath\$BackupName.reg"
-        Start-Process -FilePath "reg" -ArgumentList "export", $KeyPath, $regFile, "/y" -Wait -NoNewWindow
-        Write-ColorOutput "Backed up $KeyPath to $regFile" "Green"
-        return $regFile
+        # Check PowerShell version
+        $psVersion = $PSVersionTable.PSVersion
+        if ($psVersion.Major -lt 5) {
+            Write-Log "WARNING: PowerShell 5.0+ recommended. Current version: $($psVersion.ToString())" "WARN" "Yellow"
+        }
+        
+        # Check admin privileges
+        $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+        $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        
+        if (-not $isAdmin) {
+            Write-Log "ERROR: Administrator privileges required" "ERROR" "Red"
+            return $false
+        }
+        
+        Write-Log "System compatibility check passed" "INFO" "Green"
+        return $true
     }
     catch {
-        Write-ColorOutput "Warning: Could not backup $KeyPath - $($_.Exception.Message)" "Yellow"
-        return $null
+        Write-Log "Error during compatibility check: $($_.Exception.Message)" "ERROR" "Red"
+        return $false
     }
 }
 
-# Function to set registry value
+# Enhanced backup registry function with retry logic
+function Backup-Registry {
+    param(
+        [string]$KeyPath, 
+        [string]$BackupName,
+        [int]$MaxRetries = 3
+    )
+    
+    $retryCount = 0
+    
+    while ($retryCount -lt $MaxRetries) {
+        try {
+            $script:OperationCount++
+            
+            if (-not (Test-Path $script:BackupPath)) {
+                New-Item -ItemType Directory -Path $script:BackupPath -Force | Out-Null
+                Write-Log "Created backup directory: $script:BackupPath" "INFO" "Blue"
+            }
+            
+            $regFile = "$script:BackupPath\$BackupName.reg"
+            $process = Start-Process -FilePath "reg" -ArgumentList "export", $KeyPath, $regFile, "/y" -Wait -NoNewWindow -PassThru
+            
+            if ($process.ExitCode -eq 0 -and (Test-Path $regFile)) {
+                $script:SuccessCount++
+                Write-Log "Successfully backed up $KeyPath to $regFile" "INFO" "Green"
+                return $regFile
+            } else {
+                throw "Registry export failed with exit code: $($process.ExitCode)"
+            }
+        }
+        catch {
+            $retryCount++
+            $script:ErrorCount++
+            
+            if ($retryCount -lt $MaxRetries) {
+                Write-Log "Backup attempt $retryCount failed for $KeyPath. Retrying... Error: $($_.Exception.Message)" "WARN" "Yellow"
+                Start-Sleep -Seconds 2
+            } else {
+                Write-Log "Failed to backup $KeyPath after $MaxRetries attempts: $($_.Exception.Message)" "ERROR" "Red"
+                return $null
+            }
+        }
+    }
+    
+    return $null
+}
+
+# Enhanced registry value setting with validation and retry
 function Set-RegistryValue {
     param(
         [string]$Path,
         [string]$Name,
         [string]$Value,
-        [string]$Type = "String"
+        [string]$Type = "String",
+        [int]$MaxRetries = 3
     )
     
-    try {
-        if (-not (Test-Path $Path)) {
-            New-Item -Path $Path -Force | Out-Null
+    $retryCount = 0
+    
+    while ($retryCount -lt $MaxRetries) {
+        try {
+            $script:OperationCount++
+            
+            # Ensure the registry path exists
+            if (-not (Test-Path $Path)) {
+                New-Item -Path $Path -Force | Out-Null
+                Write-Log "Created registry path: $Path" "INFO" "Blue"
+            }
+            
+            # Set the registry value
+            Set-ItemProperty -Path $Path -Name $Name -Value $Value -Type $Type -ErrorAction Stop
+            
+            # Verify the value was set correctly
+            $verifyValue = Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop
+            if ($verifyValue.$Name -eq $Value) {
+                $script:SuccessCount++
+                Write-Log "Successfully set ${Path}\${Name} = $Value" "INFO" "Cyan"
+                return $true
+            } else {
+                throw "Value verification failed. Expected: $Value, Got: $($verifyValue.$Name)"
+            }
         }
-        
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Type $Type
-        Write-ColorOutput "Set ${Path}\${Name} = $Value" "Cyan"
+        catch {
+            $retryCount++
+            $script:ErrorCount++
+            
+            if ($retryCount -lt $MaxRetries) {
+                Write-Log "Set registry attempt $retryCount failed for ${Path}\${Name}. Retrying... Error: $($_.Exception.Message)" "WARN" "Yellow"
+                Start-Sleep -Seconds 1
+            } else {
+                Write-Log "Failed to set ${Path}\${Name} after $MaxRetries attempts: $($_.Exception.Message)" "ERROR" "Red"
+                return $false
+            }
+        }
     }
-    catch {
-        Write-ColorOutput "Error setting ${Path}\${Name}: $($_.Exception.Message)" "Red"
-    }
+    
+    return $false
 }
 
-# Function to remove registry value
+# Enhanced remove registry value function
 function Remove-RegistryValue {
     param(
         [string]$Path,
-        [string]$Name
+        [string]$Name,
+        [int]$MaxRetries = 3
     )
     
-    try {
-        if (Test-Path $Path) {
-            $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
-            if ($item) {
-                Remove-ItemProperty -Path $Path -Name $Name
-                Write-ColorOutput "Removed ${Path}\${Name}" "Yellow"
+    $retryCount = 0
+    
+    while ($retryCount -lt $MaxRetries) {
+        try {
+            $script:OperationCount++
+            
+            if (Test-Path $Path) {
+                $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
+                if ($item) {
+                    Remove-ItemProperty -Path $Path -Name $Name -ErrorAction Stop
+                    $script:SuccessCount++
+                    Write-Log "Successfully removed ${Path}\${Name}" "INFO" "Yellow"
+                    return $true
+                }
             }
+            
+            # Value doesn't exist, consider it successful
+            Write-Log "Registry value ${Path}\${Name} does not exist (already removed)" "INFO" "Gray"
+            return $true
+        }
+        catch {
+            $retryCount++
+            $script:ErrorCount++
+            
+            if ($retryCount -lt $MaxRetries) {
+                Write-Log "Remove registry attempt $retryCount failed for ${Path}\${Name}. Retrying... Error: $($_.Exception.Message)" "WARN" "Yellow"
+                Start-Sleep -Seconds 1
+            } else {
+                Write-Log "Failed to remove ${Path}\${Name} after $MaxRetries attempts: $($_.Exception.Message)" "ERROR" "Red"
+                return $false
+            }
+        }
+    }
+    
+    return $false
+}
+
+# Function to load configuration from file
+function Import-Configuration {
+    param([string]$ConfigPath)
+    
+    if (-not $ConfigPath -or -not (Test-Path $ConfigPath)) {
+        Write-Log "No configuration file specified or found, using defaults" "INFO" "Blue"
+        return @{}
+    }
+    
+    try {
+        $config = Get-Content $ConfigPath | ConvertFrom-Json
+        Write-Log "Loaded configuration from: $ConfigPath" "INFO" "Green"
+        return $config
+    }
+    catch {
+        Write-Log "Failed to load configuration from $ConfigPath: $($_.Exception.Message)" "WARN" "Yellow"
+        return @{}
+    }
+}
+
+# Function to restore from backup
+function Restore-FromBackup {
+    param([string]$BackupDirectory)
+    
+    if (-not (Test-Path $BackupDirectory)) {
+        Write-Log "Backup directory not found: $BackupDirectory" "ERROR" "Red"
+        return $false
+    }
+    
+    try {
+        $regFiles = Get-ChildItem -Path $BackupDirectory -Filter "*.reg"
+        
+        if ($regFiles.Count -eq 0) {
+            Write-Log "No registry backup files found in: $BackupDirectory" "ERROR" "Red"
+            return $false
+        }
+        
+        Write-Log "Found $($regFiles.Count) backup files. Starting restore..." "INFO" "Blue"
+        
+        foreach ($regFile in $regFiles) {
+            Write-Log "Restoring: $($regFile.Name)" "INFO" "Cyan"
+            $process = Start-Process -FilePath "reg" -ArgumentList "import", $regFile.FullName -Wait -NoNewWindow -PassThru
+            
+            if ($process.ExitCode -eq 0) {
+                Write-Log "Successfully restored: $($regFile.Name)" "INFO" "Green"
+            } else {
+                Write-Log "Failed to restore: $($regFile.Name) (Exit code: $($process.ExitCode))" "ERROR" "Red"
+            }
+        }
+        
+        Write-Log "Backup restore completed" "INFO" "Green"
+        return $true
+    }
+    catch {
+        Write-Log "Error during backup restore: $($_.Exception.Message)" "ERROR" "Red"
+        return $false
+    }
+}
+
+# Initialize logging
+try {
+    $logDir = Split-Path $script:LogFile -Parent
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+    "Regional Settings Reset - Started $(Get-Date)" | Out-File -FilePath $script:LogFile -Encoding UTF8
+}
+catch {
+    Write-Warning "Could not initialize log file: $($_.Exception.Message)"
+}
+
+# Main script execution with enhanced error handling
+try {
+    Write-Log "========================================" "INFO" "Magenta"
+    Write-Log "Windows Regional Settings Reset Script" "INFO" "Magenta"
+    Write-Log "========================================" "INFO" "Magenta"
+    Write-Log ""
+    
+    # System compatibility check
+    if (-not (Test-SystemCompatibility)) {
+        Write-Log "System compatibility check failed. Exiting." "ERROR" "Red"
+        exit 1
+    }
+    
+    # Load configuration if specified
+    $config = Import-Configuration -ConfigPath $ConfigFile
+    
+    # Handle restore mode
+    if ($RestoreFromBackup) {
+        Write-Log "Restore mode: $RestoreFromBackup" "INFO" "Blue"
+        if (Restore-FromBackup -BackupDirectory $RestoreFromBackup) {
+            Write-Log "Restore completed successfully. A restart may be required." "INFO" "Green"
+            exit 0
+        } else {
+            Write-Log "Restore failed. Please check the backup directory and try again." "ERROR" "Red"
+            exit 1
+        }
+    }
+    
+    # Validate locale
+    if (-not $SupportedLocales.ContainsKey($Locale)) {
+        Write-Log "Unsupported locale: $Locale" "ERROR" "Red"
+        Write-Log "Supported locales:" "INFO" "White"
+        $SupportedLocales.GetEnumerator() | Sort-Object Key | ForEach-Object {
+            Write-Log "  $($_.Key) - $($_.Value)" "INFO" "White"
+        }
+        exit 1
+    }
+    
+    Write-Log "Target Locale: $Locale ($($SupportedLocales[$Locale]))" "INFO" "Green"
+    Write-Log "Log File: $script:LogFile" "INFO" "Blue"
+    Write-Log "Backup Directory: $script:BackupPath" "INFO" "Blue"
+    
+    if (-not $Force) {
+        Write-Log ""
+        Write-Warning "This script will reset ALL regional settings and may require a restart."
+        Write-Warning "Registry backups will be created before making changes."
+        $confirm = Read-Host "Do you want to continue? (y/N)"
+        if ($confirm -ne "y" -and $confirm -ne "Y") {
+            Write-Log "Operation cancelled by user." "INFO" "Yellow"
+            exit 0
+        }
+    }
+    
+    Write-Log ""
+    Write-Log "Starting regional settings reset..." "INFO" "Green"
+    $startTime = Get-Date
+    
+    # Validate write access to registry
+    try {
+        $testPath = "HKCU:\Software\RegionalSettingsTest"
+        New-Item -Path $testPath -Force | Out-Null
+        Remove-Item -Path $testPath -Force
+        Write-Log "Registry write access validated" "INFO" "Green"
+    }
+    catch {
+        Write-Log "Unable to write to registry. Please ensure you have proper permissions." "ERROR" "Red"
+        exit 1
+    }
+}
+catch {
+    Write-Log "Critical error during initialization: $($_.Exception.Message)" "ERROR" "Red"
+    Write-Log "Stack trace: $($_.ScriptStackTrace)" "ERROR" "Red"
+    exit 1
+}
+
+    # Registry paths for regional settings
+    $RegPaths = @{
+        "CurrentUser" = @(
+            "HKCU:\Control Panel\International",
+            "HKCU:\Control Panel\Desktop",
+            "HKCU:\Control Panel\Input Method"
+        )
+        "LocalMachine" = @(
+            "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\Language",
+            "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\Locale",
+            "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage"
+        )
+        "Windows11Memory" = @(
+            "HKCU:\Control Panel\International\User Profile",
+            "HKCU:\Control Panel\International\Geo",
+            "HKCU:\Software\Microsoft\Input\Settings",
+            "HKCU:\Software\Microsoft\CTF\LangBar"
+        )
+    }
+    
+    # Backup current settings with progress tracking
+    Write-Log "Creating registry backups..." "INFO" "Blue"
+    $totalBackups = ($RegPaths.Values | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum
+    $currentBackup = 0
+    
+    try {
+        foreach ($category in $RegPaths.Keys) {
+            Write-Log "Backing up $category settings..." "INFO" "Blue"
+            foreach ($regPath in $RegPaths[$category]) {
+                $currentBackup++
+                $keyName = $regPath -replace ".*\\\\", ""
+                $progressPercent = [math]::Round(($currentBackup / $totalBackups) * 100, 1)
+                Write-Log "[$progressPercent%] Backing up: $keyName" "INFO" "Blue"
+                
+                $backupResult = Backup-Registry -KeyPath $regPath -BackupName "${category}_${keyName}"
+                if (-not $backupResult) {
+                    Write-Log "Backup failed for $regPath, but continuing..." "WARN" "Yellow"
+                }
+            }
+        }
+        Write-Log "Registry backup phase completed" "INFO" "Green"
+    }
+    catch {
+        Write-Log "Error during backup phase: $($_.Exception.Message)" "ERROR" "Red"
+        Write-Log "Continuing with reset operation..." "WARN" "Yellow"
+    }
+
+    # Reset International settings with comprehensive locale support
+    Write-Log ""
+    Write-Log "Resetting International settings..." "INFO" "Blue"
+    
+    $intlPath = "HKCU:\Control Panel\International"
+    $settingsApplied = 0
+    $settingsFailed = 0
+    
+    try {
+        # Core locale settings (universal)
+        $coreSettings = @{
+            "Locale" = $Locale
+            "LocaleName" = $Locale
+        }
+        
+        foreach ($setting in $coreSettings.GetEnumerator()) {
+            if (Set-RegistryValue -Path $intlPath -Name $setting.Key -Value $setting.Value) {
+                $settingsApplied++
+            } else {
+                $settingsFailed++
+            }
+        }
+        
+        # Locale-specific settings with enhanced coverage
+        switch ($Locale) {
+            "pl-PL" {
+                $localeSettings = @{
+                    "sLanguage" = "PLK"
+                    "sCountry" = "Poland"
+                    "sShortDate" = "dd.MM.yyyy"
+                    "sLongDate" = "d MMMM yyyy"
+                    "sTimeFormat" = "HH:mm:ss"
+                    "sShortTime" = "HH:mm"
+                    "sCurrency" = "zł"
+                    "sMonDecimalSep" = ","
+                    "sMonThousandSep" = " "
+                    "sDecimal" = ","
+                    "sThousand" = " "
+                    "sList" = ";"
+                    "iCountry" = "48"
+                    "iCurrency" = "3"
+                    "iCurrDigits" = "2"
+                    "iDate" = "1"
+                    "iTime" = "1"
+                    "iTLZero" = "1"
+                    "s1159" = ""
+                    "s2359" = ""
+                    "iNegCurr" = "8"
+                    "iPaperSize" = "9"
+                    "iMeasure" = "0"
+                }
+            }
+            "en-US" {
+                $localeSettings = @{
+                    "sLanguage" = "ENU"
+                    "sCountry" = "United States"
+                    "sShortDate" = "M/d/yyyy"
+                    "sLongDate" = "dddd, MMMM d, yyyy"
+                    "sTimeFormat" = "h:mm:ss tt"
+                    "sShortTime" = "h:mm tt"
+                    "sCurrency" = "$"
+                    "sMonDecimalSep" = "."
+                    "sMonThousandSep" = ","
+                    "sDecimal" = "."
+                    "sThousand" = ","
+                    "sList" = ","
+                    "iCountry" = "1"
+                    "iCurrency" = "0"
+                    "iCurrDigits" = "2"
+                    "iDate" = "0"
+                    "iTime" = "0"
+                    "iTLZero" = "0"
+                    "s1159" = "AM"
+                    "s2359" = "PM"
+                    "iNegCurr" = "0"
+                    "iPaperSize" = "1"
+                    "iMeasure" = "1"
+                }
+            }
+            "en-GB" {
+                $localeSettings = @{
+                    "sLanguage" = "ENG"
+                    "sCountry" = "United Kingdom"
+                    "sShortDate" = "dd/MM/yyyy"
+                    "sLongDate" = "dddd, d MMMM yyyy"
+                    "sTimeFormat" = "HH:mm:ss"
+                    "sShortTime" = "HH:mm"
+                    "sCurrency" = "£"
+                    "sMonDecimalSep" = "."
+                    "sMonThousandSep" = ","
+                    "sDecimal" = "."
+                    "sThousand" = ","
+                    "sList" = ","
+                    "iCountry" = "44"
+                    "iCurrency" = "0"
+                    "iCurrDigits" = "2"
+                    "iDate" = "1"
+                    "iTime" = "1"
+                    "iTLZero" = "1"
+                    "s1159" = ""
+                    "s2359" = ""
+                    "iNegCurr" = "1"
+                    "iPaperSize" = "9"
+                    "iMeasure" = "0"
+                }
+            }
+            "de-DE" {
+                $localeSettings = @{
+                    "sLanguage" = "DEU"
+                    "sCountry" = "Germany"
+                    "sShortDate" = "dd.MM.yyyy"
+                    "sLongDate" = "dddd, d. MMMM yyyy"
+                    "sTimeFormat" = "HH:mm:ss"
+                    "sShortTime" = "HH:mm"
+                    "sCurrency" = "€"
+                    "sMonDecimalSep" = ","
+                    "sMonThousandSep" = "."
+                    "sDecimal" = ","
+                    "sThousand" = "."
+                    "sList" = ";"
+                    "iCountry" = "49"
+                    "iCurrency" = "3"
+                    "iCurrDigits" = "2"
+                    "iDate" = "1"
+                    "iTime" = "1"
+                    "iTLZero" = "1"
+                    "s1159" = ""
+                    "s2359" = ""
+                    "iNegCurr" = "8"
+                    "iPaperSize" = "9"
+                    "iMeasure" = "0"
+                }
+            }
+            "fr-FR" {
+                $localeSettings = @{
+                    "sLanguage" = "FRA"
+                    "sCountry" = "France"
+                    "sShortDate" = "dd/MM/yyyy"
+                    "sLongDate" = "dddd d MMMM yyyy"
+                    "sTimeFormat" = "HH:mm:ss"
+                    "sShortTime" = "HH:mm"
+                    "sCurrency" = "€"
+                    "sMonDecimalSep" = ","
+                    "sMonThousandSep" = " "
+                    "sDecimal" = ","
+                    "sThousand" = " "
+                    "sList" = ";"
+                    "iCountry" = "33"
+                    "iCurrency" = "3"
+                    "iCurrDigits" = "2"
+                    "iDate" = "1"
+                    "iTime" = "1"
+                    "iTLZero" = "1"
+                    "s1159" = ""
+                    "s2359" = ""
+                    "iNegCurr" = "8"
+                    "iPaperSize" = "9"
+                    "iMeasure" = "0"
+                }
+            }
+            default {
+                Write-Log "Using generic settings for $Locale" "WARN" "Yellow"
+                $localeSettings = @{
+                    "sLanguage" = $Locale.Split('-')[0].ToUpper()
+                    "sCountry" = $SupportedLocales[$Locale]
+                }
+            }
+        }
+        
+        # Apply locale-specific settings
+        foreach ($setting in $localeSettings.GetEnumerator()) {
+            if (Set-RegistryValue -Path $intlPath -Name $setting.Key -Value $setting.Value) {
+                $settingsApplied++
+            } else {
+                $settingsFailed++
+            }
+        }
+        
+        Write-Log "International settings: $settingsApplied applied, $settingsFailed failed" "INFO" "Green"
+    }
+    catch {
+        Write-Log "Error in International settings section: $($_.Exception.Message)" "ERROR" "Red"
+    }
+
+    # Reset Windows 11 specific memory slots with enhanced error handling
+    Write-Log ""
+    Write-Log "Resetting Windows 11 memory slots..." "INFO" "Blue"
+    
+    try {
+        # Clear user profile settings
+        $userProfilePath = "HKCU:\Control Panel\International\User Profile"
+        if (Test-Path $userProfilePath) {
+            $profileItems = Get-ChildItem -Path $userProfilePath -ErrorAction SilentlyContinue
+            if ($profileItems) {
+                Remove-Item -Path $userProfilePath -Recurse -Force -ErrorAction Stop
+                Write-Log "Cleared user profile regional settings ($($profileItems.Count) items)" "INFO" "Yellow"
+            } else {
+                Write-Log "User profile regional settings already empty" "INFO" "Gray"
+            }
+        } else {
+            Write-Log "User profile path does not exist (already clean)" "INFO" "Gray"
+        }
+        
+        # Reset geographic location with locale-specific values
+        $geoId = switch ($Locale) {
+            "pl-PL" { "191" }
+            "en-US" { "244" }
+            "en-GB" { "242" }
+            "de-DE" { "94" }
+            "fr-FR" { "84" }
+            "es-ES" { "217" }
+            "it-IT" { "118" }
+            "pt-PT" { "193" }
+            "ru-RU" { "203" }
+            "zh-CN" { "45" }
+            "ja-JP" { "122" }
+            "ko-KR" { "134" }
+            default { "244" }  # Default to US
+        }
+        
+        if (Set-RegistryValue -Path "HKCU:\Control Panel\International\Geo" -Name "Nation" -Value $geoId) {
+            Write-Log "Set geographic location to: $geoId (for $Locale)" "INFO" "Green"
+        }
+        
+        # Clear input method settings with backup
+        $inputSettingsPath = "HKCU:\Software\Microsoft\Input\Settings"
+        if (Test-Path $inputSettingsPath) {
+            $inputItems = Get-ChildItem -Path $inputSettingsPath -ErrorAction SilentlyContinue
+            if ($inputItems) {
+                foreach ($item in $inputItems) {
+                    try {
+                        Remove-Item -Path $item.PSPath -Recurse -Force -ErrorAction Stop
+                        Write-Log "Cleared input setting: $($item.Name)" "INFO" "Yellow"
+                    }
+                    catch {
+                        Write-Log "Could not clear input setting $($item.Name): $($_.Exception.Message)" "WARN" "Yellow"
+                    }
+                }
+            }
+        }
+        
+        # Reset language bar settings with validation
+        $langBarPath = "HKCU:\Software\Microsoft\CTF\LangBar"
+        $langBarSettings = @{
+            "ShowStatus" = @{ Value = "3"; Type = "DWord" }
+            "Label" = @{ Value = "1"; Type = "DWord" }
+            "ExtraIconsOnMinimized" = @{ Value = "0"; Type = "DWord" }
+            "Transparency" = @{ Value = "255"; Type = "DWord" }
+        }
+        
+        foreach ($setting in $langBarSettings.GetEnumerator()) {
+            $success = Set-RegistryValue -Path $langBarPath -Name $setting.Key -Value $setting.Value.Value -Type $setting.Value.Type
+            if (-not $success) {
+                Write-Log "Failed to set language bar setting: $($setting.Key)" "WARN" "Yellow"
+            }
+        }
+        
+        Write-Log "Windows 11 memory slots reset completed" "INFO" "Green"
+    }
+    catch {
+        Write-Log "Error in Windows 11 memory slots section: $($_.Exception.Message)" "ERROR" "Red"
+    }
+
+    # Reset system locale with enhanced error handling
+    Write-Log ""
+    Write-Log "Setting system locale..." "INFO" "Blue"
+    
+    try {
+        # Get the geographic ID for the locale
+        $geoId = switch ($Locale) {
+            "pl-PL" { 191 }
+            "en-US" { 244 }
+            "en-GB" { 242 }
+            "de-DE" { 94 }
+            "fr-FR" { 84 }
+            "es-ES" { 217 }
+            "it-IT" { 118 }
+            "pt-PT" { 193 }
+            "ru-RU" { 203 }
+            "zh-CN" { 45 }
+            "ja-JP" { 122 }
+            "ko-KR" { 134 }
+            default { 244 }
+        }
+        
+        # Use PowerShell cmdlets for internationalization with error handling
+        $systemLocaleSuccess = $false
+        $userLanguageSuccess = $false
+        $homeLocationSuccess = $false
+        
+        # Set system locale
+        try {
+            Set-WinSystemLocale -SystemLocale $Locale -ErrorAction Stop
+            $systemLocaleSuccess = $true
+            Write-Log "System locale set to: $Locale" "INFO" "Green"
+        }
+        catch {
+            Write-Log "Could not set system locale: $($_.Exception.Message)" "WARN" "Yellow"
+        }
+        
+        # Set user language list
+        try {
+            Set-WinUserLanguageList -LanguageList $Locale -Force -ErrorAction Stop
+            $userLanguageSuccess = $true
+            Write-Log "User language list set to: $Locale" "INFO" "Green"
+        }
+        catch {
+            Write-Log "Could not set user language list: $($_.Exception.Message)" "WARN" "Yellow"
+        }
+        
+        # Set home location
+        try {
+            Set-WinHomeLocation -GeoId $geoId -ErrorAction Stop
+            $homeLocationSuccess = $true
+            Write-Log "Home location set to: $geoId" "INFO" "Green"
+        }
+        catch {
+            Write-Log "Could not set home location: $($_.Exception.Message)" "WARN" "Yellow"
+        }
+        
+        # Summary of system locale operations
+        $successCount = @($systemLocaleSuccess, $userLanguageSuccess, $homeLocationSuccess) | Where-Object { $_ } | Measure-Object | Select-Object -ExpandProperty Count
+        Write-Log "System locale operations: $successCount/3 successful" "INFO" "Green"
+        
+        if ($successCount -eq 0) {
+            Write-Log "All system locale operations failed. Manual configuration may be required." "WARN" "Yellow"
         }
     }
     catch {
-        Write-ColorOutput "Could not remove ${Path}\${Name}: $($_.Exception.Message)" "Yellow"
+        Write-Log "Error in system locale section: $($_.Exception.Message)" "ERROR" "Red"
     }
-}
 
-# Main script
-Write-ColorOutput "========================================" "Magenta"
-Write-ColorOutput "Windows Regional Settings Reset Script" "Magenta"
-Write-ColorOutput "========================================" "Magenta"
-Write-ColorOutput ""
-
-Write-ColorOutput "Target Locale: $Locale ($($SupportedLocales[$Locale]))" "Green"
-
-if (-not $Force) {
-    Write-ColorOutput ""
-    Write-Warning "This script will reset ALL regional settings and may require a restart."
-    $confirm = Read-Host "Do you want to continue? (y/N)"
-    if ($confirm -ne "y" -and $confirm -ne "Y") {
-        Write-ColorOutput "Operation cancelled." "Yellow"
-        exit 0
-    }
-}
-
-Write-ColorOutput ""
-Write-ColorOutput "Starting regional settings reset..." "Green"
-
-# Registry paths for regional settings
-$RegPaths = @{
-    "CurrentUser" = @(
-        "HKCU:\Control Panel\International",
-        "HKCU:\Control Panel\Desktop",
-        "HKCU:\Control Panel\Input Method"
-    )
-    "LocalMachine" = @(
-        "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\Language",
-        "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\Locale",
-        "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage"
-    )
-    "Windows11Memory" = @(
-        "HKCU:\Control Panel\International\User Profile",
-        "HKCU:\Control Panel\International\Geo",
-        "HKCU:\Software\Microsoft\Input\Settings",
-        "HKCU:\Software\Microsoft\CTF\LangBar"
-    )
-}
-
-# Backup current settings
-Write-ColorOutput "Creating registry backups..." "Blue"
-foreach ($category in $RegPaths.Keys) {
-    foreach ($regPath in $RegPaths[$category]) {
-        $keyName = $regPath -replace ".*\\", ""
-        Backup-Registry -KeyPath $regPath -BackupName "${category}_${keyName}"
-    }
-}
-
-# Reset International settings
-Write-ColorOutput ""
-Write-ColorOutput "Resetting International settings..." "Blue"
-
-$intlPath = "HKCU:\Control Panel\International"
-
-# Core locale settings
-Set-RegistryValue -Path $intlPath -Name "Locale" -Value $Locale
-Set-RegistryValue -Path $intlPath -Name "LocaleName" -Value $Locale
-
-# Polish-specific settings (adjust based on selected locale)
-switch ($Locale) {
-    "pl-PL" {
-        Set-RegistryValue -Path $intlPath -Name "sLanguage" -Value "PLK"
-        Set-RegistryValue -Path $intlPath -Name "sCountry" -Value "Poland"
-        Set-RegistryValue -Path $intlPath -Name "sShortDate" -Value "dd.MM.yyyy"
-        Set-RegistryValue -Path $intlPath -Name "sLongDate" -Value "d MMMM yyyy"
-        Set-RegistryValue -Path $intlPath -Name "sTimeFormat" -Value "HH:mm:ss"
-        Set-RegistryValue -Path $intlPath -Name "sShortTime" -Value "HH:mm"
-        Set-RegistryValue -Path $intlPath -Name "sCurrency" -Value "zł"
-        Set-RegistryValue -Path $intlPath -Name "sMonDecimalSep" -Value ","
-        Set-RegistryValue -Path $intlPath -Name "sMonThousandSep" -Value " "
-        Set-RegistryValue -Path $intlPath -Name "sDecimal" -Value ","
-        Set-RegistryValue -Path $intlPath -Name "sThousand" -Value " "
-        Set-RegistryValue -Path $intlPath -Name "sList" -Value ";"
-        Set-RegistryValue -Path $intlPath -Name "iCountry" -Value "48"
-        Set-RegistryValue -Path $intlPath -Name "iCurrency" -Value "3"
-        Set-RegistryValue -Path $intlPath -Name "iCurrDigits" -Value "2"
-        Set-RegistryValue -Path $intlPath -Name "iDate" -Value "1"
-        Set-RegistryValue -Path $intlPath -Name "iTime" -Value "1"
-        Set-RegistryValue -Path $intlPath -Name "iTLZero" -Value "1"
-        Set-RegistryValue -Path $intlPath -Name "s1159" -Value ""
-        Set-RegistryValue -Path $intlPath -Name "s2359" -Value ""
-    }
-    "en-US" {
-        Set-RegistryValue -Path $intlPath -Name "sLanguage" -Value "ENU"
-        Set-RegistryValue -Path $intlPath -Name "sCountry" -Value "United States"
-        Set-RegistryValue -Path $intlPath -Name "sShortDate" -Value "M/d/yyyy"
-        Set-RegistryValue -Path $intlPath -Name "sLongDate" -Value "dddd, MMMM d, yyyy"
-        Set-RegistryValue -Path $intlPath -Name "sTimeFormat" -Value "h:mm:ss tt"
-        Set-RegistryValue -Path $intlPath -Name "sShortTime" -Value "h:mm tt"
-        Set-RegistryValue -Path $intlPath -Name "sCurrency" -Value "$"
-        Set-RegistryValue -Path $intlPath -Name "sMonDecimalSep" -Value "."
-        Set-RegistryValue -Path $intlPath -Name "sMonThousandSep" -Value ","
-        Set-RegistryValue -Path $intlPath -Name "sDecimal" -Value "."
-        Set-RegistryValue -Path $intlPath -Name "sThousand" -Value ","
-        Set-RegistryValue -Path $intlPath -Name "sList" -Value ","
-        Set-RegistryValue -Path $intlPath -Name "iCountry" -Value "1"
-        Set-RegistryValue -Path $intlPath -Name "iCurrency" -Value "0"
-        Set-RegistryValue -Path $intlPath -Name "iCurrDigits" -Value "2"
-        Set-RegistryValue -Path $intlPath -Name "iDate" -Value "0"
-        Set-RegistryValue -Path $intlPath -Name "iTime" -Value "0"
-        Set-RegistryValue -Path $intlPath -Name "iTLZero" -Value "0"
-        Set-RegistryValue -Path $intlPath -Name "s1159" -Value "AM"
-        Set-RegistryValue -Path $intlPath -Name "s2359" -Value "PM"
-    }
-    # Add more locales as needed
-    default {
-        Write-ColorOutput "Using generic settings for $Locale" "Yellow"
-        Set-RegistryValue -Path $intlPath -Name "sLanguage" -Value $Locale.Split('-')[0].ToUpper()
-        Set-RegistryValue -Path $intlPath -Name "sCountry" -Value $SupportedLocales[$Locale]
-    }
-}
-
-# Reset Windows 11 specific memory slots
-Write-ColorOutput ""
-Write-ColorOutput "Resetting Windows 11 memory slots..." "Blue"
-
-# Clear user profile settings
-$userProfilePath = "HKCU:\Control Panel\International\User Profile"
-if (Test-Path $userProfilePath) {
-    Remove-Item -Path $userProfilePath -Recurse -Force -ErrorAction SilentlyContinue
-    Write-ColorOutput "Cleared user profile regional settings" "Yellow"
-}
-
-# Reset geographic location
-Set-RegistryValue -Path "HKCU:\Control Panel\International\Geo" -Name "Nation" -Value (if ($Locale -eq "pl-PL") { "191" } else { "244" })
-
-# Clear input method settings
-$inputSettingsPath = "HKCU:\Software\Microsoft\Input\Settings"
-if (Test-Path $inputSettingsPath) {
-    Get-ChildItem -Path $inputSettingsPath | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    Write-ColorOutput "Cleared input method settings" "Yellow"
-}
-
-# Reset language bar settings
-Set-RegistryValue -Path "HKCU:\Software\Microsoft\CTF\LangBar" -Name "ShowStatus" -Value "3" -Type "DWord"
-Set-RegistryValue -Path "HKCU:\Software\Microsoft\CTF\LangBar" -Name "Label" -Value "1" -Type "DWord"
-
-# Reset system locale (requires admin)
-Write-ColorOutput ""
-Write-ColorOutput "Setting system locale..." "Blue"
-
-try {
-    # Use PowerShell cmdlets for internationalization
-    Set-WinSystemLocale -SystemLocale $Locale
-    Set-WinUserLanguageList -LanguageList $Locale -Force
-    Set-WinHomeLocation -GeoId (if ($Locale -eq "pl-PL") { 191 } else { 244 })
-    Write-ColorOutput "System locale settings updated" "Green"
-}
-catch {
-    Write-ColorOutput "Warning: Could not set system locale (may require different approach): $($_.Exception.Message)" "Yellow"
-}
-
-# Clear MRU (Most Recently Used) lists
-Write-ColorOutput ""
-Write-ColorOutput "Clearing MRU lists..." "Blue"
-
-$mruPaths = @(
-    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU",
-    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths"
-)
-
-foreach ($mruPath in $mruPaths) {
-    if (Test-Path $mruPath) {
-        Get-ItemProperty -Path $mruPath | ForEach-Object {
-            $_.PSObject.Properties | Where-Object { $_.Name -ne "PSPath" -and $_.Name -ne "PSParentPath" -and $_.Name -ne "PSChildName" -and $_.Name -ne "PSDrive" -and $_.Name -ne "PSProvider" } | ForEach-Object {
-                Remove-ItemProperty -Path $mruPath -Name $_.Name -ErrorAction SilentlyContinue
+    # Additional reset capabilities - Browser and Office settings
+    Write-Log ""
+    Write-Log "Resetting additional application settings..." "INFO" "Blue"
+    
+    try {
+        # Reset Internet Explorer/Edge regional settings
+        $ieSettingsApplied = 0
+        $ieSettingsFailed = 0
+        
+        $iePaths = @(
+            "HKCU:\Software\Microsoft\Internet Explorer\International",
+            "HKCU:\Software\Microsoft\Internet Explorer\Main\International"
+        )
+        
+        foreach ($iePath in $iePaths) {
+            if (Set-RegistryValue -Path $iePath -Name "AcceptLanguage" -Value $Locale) {
+                $ieSettingsApplied++
+            } else {
+                $ieSettingsFailed++
             }
         }
-        Write-ColorOutput "Cleared MRU: $mruPath" "Yellow"
+        
+        # Reset Chrome regional settings (if Chrome is installed)
+        $chromePath = "HKCU:\Software\Google\Chrome\PreferenceMACs\Default\intl"
+        if (Test-Path "HKCU:\Software\Google\Chrome") {
+            if (Set-RegistryValue -Path $chromePath -Name "accept_languages" -Value $Locale) {
+                $ieSettingsApplied++
+                Write-Log "Chrome language preference updated" "INFO" "Green"
+            }
+        }
+        
+        # Reset Firefox regional settings (if Firefox is installed)
+        $firefoxPrefFile = "$env:APPDATA\Mozilla\Firefox\Profiles\*\prefs.js"
+        $firefoxProfiles = Get-ChildItem -Path "$env:APPDATA\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue 2>$null
+        
+        if ($firefoxProfiles) {
+            foreach ($profile in $firefoxProfiles) {
+                $prefsFile = Join-Path $profile.FullName "prefs.js"
+                if (Test-Path $prefsFile) {
+                    try {
+                        $prefsContent = Get-Content $prefsFile -ErrorAction Stop
+                        $newPrefs = $prefsContent | Where-Object { $_ -notmatch 'intl\\.accept_languages' }
+                        $newPrefs += "user_pref(`"intl.accept_languages`", `"$Locale`");"
+                        $newPrefs | Set-Content $prefsFile -ErrorAction Stop
+                        Write-Log "Firefox profile updated: $($profile.Name)" "INFO" "Green"
+                        $ieSettingsApplied++
+                    }
+                    catch {
+                        Write-Log "Could not update Firefox profile $($profile.Name): $($_.Exception.Message)" "WARN" "Yellow"
+                        $ieSettingsFailed++
+                    }
+                }
+            }
+        }
+        
+        Write-Log "Browser settings: $ieSettingsApplied applied, $ieSettingsFailed failed" "INFO" "Green"
+        
+        # Reset Microsoft Office regional settings
+        $officeSettingsApplied = 0
+        $officeSettingsFailed = 0
+        
+        $officeVersions = @("15.0", "16.0")  # Office 2013, 2016/2019/365
+        $officeApps = @("Word", "Excel", "PowerPoint", "Outlook")
+        
+        foreach ($version in $officeVersions) {
+            foreach ($app in $officeApps) {
+                $officePath = "HKCU:\Software\Microsoft\Office\$version\$app\Options"
+                
+                if (Test-Path $officePath) {
+                    # Set locale for Office applications
+                    if (Set-RegistryValue -Path $officePath -Name "LOCALE_IDEFAULTLANGUAGE" -Value ([System.Globalization.CultureInfo]::GetCultureInfo($Locale).LCID.ToString()) -Type "DWord") {
+                        $officeSettingsApplied++
+                    } else {
+                        $officeSettingsFailed++
+                    }
+                    
+                    # Set regional format
+                    if (Set-RegistryValue -Path $officePath -Name "LOCALE_IDEFAULTLOCALE" -Value ([System.Globalization.CultureInfo]::GetCultureInfo($Locale).LCID.ToString()) -Type "DWord") {
+                        $officeSettingsApplied++
+                    } else {
+                        $officeSettingsFailed++
+                    }
+                }
+            }
+        }
+        
+        if ($officeSettingsApplied -gt 0) {
+            Write-Log "Office settings: $officeSettingsApplied applied, $officeSettingsFailed failed" "INFO" "Green"
+        } else {
+            Write-Log "No Office installations detected" "INFO" "Gray"
+        }
+        
+        # Reset .NET Framework regional settings
+        $dotnetPath = "HKCU:\Control Panel\International"
+        $dotnetCulture = [System.Globalization.CultureInfo]::GetCultureInfo($Locale)
+        
+        $dotnetSettings = @{
+            "LocaleName" = $Locale
+            "sLanguage" = $dotnetCulture.ThreeLetterISOLanguageName.ToUpper()
+        }
+        
+        $dotnetApplied = 0
+        foreach ($setting in $dotnetSettings.GetEnumerator()) {
+            if (Set-RegistryValue -Path $dotnetPath -Name $setting.Key -Value $setting.Value) {
+                $dotnetApplied++
+            }
+        }
+        
+        Write-Log ".NET Framework settings applied: $dotnetApplied" "INFO" "Green"
+        
+    }
+    catch {
+        Write-Log "Error in additional application settings: $($_.Exception.Message)" "ERROR" "Red"
+    }
+    Write-Log ""
+    Write-Log "Clearing MRU lists..." "INFO" "Blue"
+    
+    try {
+        $mruPaths = @(
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU",
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths",
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\WordWheelQuery",
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs"
+        )
+        
+        $mruItemsCleared = 0
+        
+        foreach ($mruPath in $mruPaths) {
+            if (Test-Path $mruPath) {
+                try {
+                    $properties = Get-ItemProperty -Path $mruPath -ErrorAction SilentlyContinue
+                    if ($properties) {
+                        $propertyNames = $properties.PSObject.Properties | Where-Object { 
+                            $_.Name -notin @("PSPath", "PSParentPath", "PSChildName", "PSDrive", "PSProvider") 
+                        } | Select-Object -ExpandProperty Name
+                        
+                        foreach ($propName in $propertyNames) {
+                            try {
+                                Remove-ItemProperty -Path $mruPath -Name $propName -ErrorAction Stop
+                                $mruItemsCleared++
+                            }
+                            catch {
+                                Write-Log "Could not remove MRU item ${mruPath}\${propName}: $($_.Exception.Message)" "WARN" "Yellow"
+                            }
+                        }
+                        
+                        if ($propertyNames.Count -gt 0) {
+                            Write-Log "Cleared MRU: $mruPath ($($propertyNames.Count) items)" "INFO" "Yellow"
+                        }
+                    }
+                }
+                catch {
+                    Write-Log "Error accessing MRU path $mruPath: $($_.Exception.Message)" "WARN" "Yellow"
+                }
+            } else {
+                Write-Log "MRU path does not exist: $mruPath" "INFO" "Gray"
+            }
+        }
+        
+        Write-Log "MRU cleanup completed: $mruItemsCleared items cleared" "INFO" "Green"
+    }
+    catch {
+        Write-Log "Error in MRU cleanup section: $($_.Exception.Message)" "ERROR" "Red"
+    }
+    
+    # Calculate execution time and statistics
+    $endTime = Get-Date
+    $executionTime = $endTime - $startTime
+    
+    Write-Log ""
+    Write-Log "========================================" "INFO" "Magenta"
+    Write-Log "Regional Settings Reset Complete!" "INFO" "Green"
+    Write-Log "========================================" "INFO" "Magenta"
+    Write-Log ""
+    Write-Log "Execution Summary:" "INFO" "White"
+    Write-Log "  Target Locale: $Locale ($($SupportedLocales[$Locale]))" "INFO" "Green"
+    Write-Log "  Execution Time: $($executionTime.TotalSeconds.ToString('F2')) seconds" "INFO" "Blue"
+    Write-Log "  Total Operations: $script:OperationCount" "INFO" "Blue"
+    Write-Log "  Successful Operations: $script:SuccessCount" "INFO" "Green"
+    Write-Log "  Failed Operations: $script:ErrorCount" "INFO" $(if ($script:ErrorCount -gt 0) { "Red" } else { "Green" })
+    Write-Log "  Success Rate: $([math]::Round(($script:SuccessCount / [math]::Max($script:OperationCount, 1)) * 100, 1))%" "INFO" "Blue"
+    Write-Log ""
+    Write-Log "Log File: $script:LogFile" "INFO" "Blue"
+    Write-Log "Backup Directory: $script:BackupPath" "INFO" "Blue"
+    Write-Log ""
+    
+    if ($script:ErrorCount -gt 0) {
+        Write-Warning "Some operations failed. Check the log file for details."
+        Write-Log "Review the log file for detailed error information: $script:LogFile" "WARN" "Yellow"
+    } else {
+        Write-Log "All operations completed successfully!" "INFO" "Green"
+    }
+    
+    Write-Warning "A system restart is recommended for all changes to take effect."
+    Write-Log ""
+    
+    # Restart prompt with enhanced options
+    if (-not $Force) {
+        Write-Host "Options:" -ForegroundColor White
+        Write-Host "  [R] Restart now" -ForegroundColor Yellow
+        Write-Host "  [S] Shutdown now" -ForegroundColor Yellow  
+        Write-Host "  [N] Continue without restart (default)" -ForegroundColor White
+        Write-Host ""
+        
+        $action = Read-Host "Choose an action (R/S/N)"
+        
+        switch ($action.ToUpper()) {
+            "R" {
+                Write-Log "User chose to restart system" "INFO" "Yellow"
+                Write-Log "Restarting system in 10 seconds..." "INFO" "Yellow"
+                Start-Sleep -Seconds 10
+                try {
+                    Restart-Computer -Force
+                }
+                catch {
+                    Write-Log "Could not restart system: $($_.Exception.Message)" "ERROR" "Red"
+                }
+            }
+            "S" {
+                Write-Log "User chose to shutdown system" "INFO" "Yellow"
+                Write-Log "Shutting down system in 10 seconds..." "INFO" "Yellow"
+                Start-Sleep -Seconds 10
+                try {
+                    Stop-Computer -Force
+                }
+                catch {
+                    Write-Log "Could not shutdown system: $($_.Exception.Message)" "ERROR" "Red"
+                }
+            }
+            default {
+                Write-Log "User chose to continue without restart" "INFO" "Blue"
+            }
+        }
+    }
+    
+    Write-Log "Script completed successfully." "INFO" "Green"
+    
+    # Final log entry
+    try {
+        "Regional Settings Reset - Completed $(Get-Date) - Success Rate: $([math]::Round(($script:SuccessCount / [math]::Max($script:OperationCount, 1)) * 100, 1))%" | Add-Content -Path $script:LogFile
+    }
+    catch {
+        # Ignore final log errors
+    }
+    
+    # Set exit code based on error count
+    if ($script:ErrorCount -gt 0) {
+        exit 2  # Partial success
+    } else {
+        exit 0  # Complete success
     }
 }
-
-Write-ColorOutput ""
-Write-ColorOutput "========================================" "Magenta"
-Write-ColorOutput "Regional Settings Reset Complete!" "Green"
-Write-ColorOutput "========================================" "Magenta"
-Write-ColorOutput ""
-Write-ColorOutput "Target Locale: $Locale ($($SupportedLocales[$Locale]))" "Green"
-Write-ColorOutput ""
-Write-Warning "A system restart is recommended for all changes to take effect."
-Write-ColorOutput ""
-
-if (-not $Force) {
-    $restart = Read-Host "Would you like to restart now? (y/N)"
-    if ($restart -eq "y" -or $restart -eq "Y") {
-        Write-ColorOutput "Restarting system in 10 seconds..." "Yellow"
-        Start-Sleep -Seconds 10
-        Restart-Computer -Force
+catch {
+    Write-Log "Critical error during script execution: $($_.Exception.Message)" "ERROR" "Red"
+    Write-Log "Stack trace: $($_.ScriptStackTrace)" "ERROR" "Red"
+    
+    try {
+        "Regional Settings Reset - FAILED $(Get-Date) - Critical Error: $($_.Exception.Message)" | Add-Content -Path $script:LogFile
     }
+    catch {
+        # Ignore final log errors
+    }
+    
+    exit 1  # Critical failure
 }
-
-Write-ColorOutput "Script completed successfully." "Green"

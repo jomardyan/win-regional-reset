@@ -1,0 +1,34 @@
+{
+  "title": "Regional Settings Reset Configuration",
+  "description": "Configuration file for customizing regional settings reset behavior",
+  "defaultLocale": "pl-PL",
+  "skipBackup": false,
+  "maxRetries": 3,
+  "logLevel": "INFO",
+  "features": {
+    "resetBrowserSettings": true,
+    "resetOfficeSettings": true,
+    "resetMruLists": true,
+    "resetSystemLocale": true,
+    "resetWindows11Memory": true
+  },
+  "customSettings": {
+    "additionalRegistryPaths": []
+  },
+  "backup": {
+    "retentionDays": 30,
+    "compressionEnabled": false,
+    "customBackupPath": ""
+  },
+  "notifications": {
+    "showProgressBar": true,
+    "enableEmailNotification": false,
+    "emailSettings": {
+      "smtpServer": "",
+      "smtpPort": 587,
+      "username": "",
+      "recipient": "",
+      "useSSL": true
+    }
+  }
+}
