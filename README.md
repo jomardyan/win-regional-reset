@@ -55,7 +55,30 @@ Open PowerShell as Administrator:
 .\Reset-RegionalSettings.ps1 -RestoreFromBackup "C:\Temp\RegionalSettings_Backup_20231201_143022"
 ```
 
-### Method 3: Backup Management
+### Method 3: Python Edition (Interactive)
+
+Navigate to the Python directory and run the interactive application:
+
+```bash
+cd python
+python regional_settings_reset.py
+```
+
+Or use the quick launcher:
+```bash
+cd python
+python launcher.py
+```
+
+**Python Edition Features:**
+- 🎮 Interactive menu system
+- 🎨 Color-coded interface
+- 📊 Real-time progress tracking
+- 🔧 Built-in validation tools
+- 📋 System information display
+- ⚙️ Configuration management UI
+
+### Method 4: Backup Management
 
 ```batch
 # List available backups
@@ -131,11 +154,24 @@ backup-manager.bat verify
 
 ## 📁 Files
 
+### **Core Application**
 - `Reset-RegionalSettings.ps1` - Main PowerShell script with advanced features
 - `reset-regional.bat` - Batch wrapper with comprehensive options and examples
+- `config.json` - Configuration file template
+
+### **Management Tools**
 - `validate.bat` - Comprehensive validation and testing script
 - `backup-manager.bat` - Advanced backup management utility
-- `config.json` - Configuration file template
+
+### **Python Edition**
+- `python/` - Complete Python port with interactive menu system
+  - `regional_settings_reset.py` - Main Python application
+  - `launcher.py` - Quick launcher with options
+  - `config.json` - Python-specific configuration
+  - `README.md` - Python edition documentation
+  - `requirements.txt` - Python dependencies
+
+### **Documentation**
 - `README.md` - This documentation
 - `LICENSE` - MIT license file
 

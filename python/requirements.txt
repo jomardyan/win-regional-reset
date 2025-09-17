@@ -1,0 +1,20 @@
+# Windows Regional Settings Reset - Python Edition v2.0
+# Requirements file for dependencies
+
+# Core dependencies (most are built-in to Python standard library)
+# No external dependencies required for basic functionality
+
+# Optional dependencies for enhanced features:
+# colorama>=0.4.4        # Enhanced cross-platform colored terminal output
+# psutil>=5.8.0          # System and process utilities
+# click>=8.0.0           # Alternative CLI framework
+# rich>=10.0.0           # Rich text and beautiful formatting in terminal
+
+# Development dependencies:
+# pytest>=6.0.0          # Testing framework
+# black>=21.0.0          # Code formatter
+# flake8>=3.9.0          # Linting
+# mypy>=0.910            # Type checking
+
+# Note: This application is designed to work with Python 3.6+ standard library
+# Additional packages are optional and can enhance the user experience

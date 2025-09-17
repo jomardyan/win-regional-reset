@@ -1,0 +1,44 @@
+{
+  "title": "Regional Settings Reset Configuration - Python Edition",
+  "description": "Configuration file for customizing regional settings reset behavior in Python",
+  "defaultLocale": "pl-PL",
+  "skipBackup": false,
+  "maxRetries": 3,
+  "logLevel": "INFO",
+  "features": {
+    "resetBrowserSettings": true,
+    "resetOfficeSettings": true,
+    "resetMruLists": true,
+    "resetSystemLocale": true,
+    "resetWindows11Memory": true,
+    "interactiveMode": true,
+    "coloredOutput": true
+  },
+  "customSettings": {
+    "additionalRegistryPaths": [],
+    "customLocaleSettings": {}
+  },
+  "backup": {
+    "retentionDays": 30,
+    "compressionEnabled": false,
+    "customBackupPath": "",
+    "autoBackup": true
+  },
+  "ui": {
+    "showProgressBar": true,
+    "enableColors": true,
+    "menuTimeout": 0,
+    "confirmationRequired": true
+  },
+  "notifications": {
+    "showSuccessMessages": true,
+    "showWarnings": true,
+    "enableSystemNotifications": false
+  },
+  "advanced": {
+    "parallelOperations": false,
+    "debugMode": false,
+    "verboseLogging": false,
+    "dryRun": false
+  }
+}
