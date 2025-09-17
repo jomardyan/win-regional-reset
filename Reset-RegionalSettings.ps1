@@ -255,18 +255,49 @@ function Set-RegistryValue {
         }
     }
     
-    return $false
-}
-
-# Enhanced remove registry value function
-function Remove-RegistryValue {
+    }\n    }\n    \n    return $false\n}\n\n# Enhanced progress tracking function
+function Show-Progress {
     param(
-        [string]$Path,
-        [string]$Name,
-        [int]$MaxRetries = 3
+        [string]$Activity,
+        [string]$Status,
+        [int]$PercentComplete = 0,
+        [int]$CurrentOperation = 0,
+        [int]$TotalOperations = 0
     )
     
-    $retryCount = 0
+    if ($CurrentOperation -gt 0 -and $TotalOperations -gt 0) {
+        $PercentComplete = [math]::Round(($CurrentOperation / $TotalOperations) * 100, 1)
+        $Status = "$Status ($CurrentOperation/$TotalOperations)"
+    }
+    
+    Write-Progress -Activity $Activity -Status $Status -PercentComplete $PercentComplete
+        Write-Log \"[Progress ${PercentComplete}%] ${Activity}: ${Status}\" \"INFO\" \"Cyan\"
+}
+
+# Performance monitoring function
+function Start-PerformanceMonitoring {
+    $script:StartTime = Get-Date
+    $script:StartMemory = [System.GC]::GetTotalMemory($false)
+    $script:StartProcess = Get-Process -Id $PID
+    Write-Log "Performance monitoring started" "INFO" "Blue"
+}
+
+function Stop-PerformanceMonitoring {
+    $endTime = Get-Date
+    $endMemory = [System.GC]::GetTotalMemory($false)
+    $endProcess = Get-Process -Id $PID
+    
+    $executionTime = $endTime - $script:StartTime
+    $memoryDiff = $endMemory - $script:StartMemory
+    $cpuTime = $endProcess.TotalProcessorTime - $script:StartProcess.TotalProcessorTime
+    
+    Write-Log "Performance Summary:" "INFO" "Blue"
+    Write-Log "  Execution Time: $($executionTime.TotalSeconds.ToString('F2')) seconds" "INFO" "Blue"
+    Write-Log "  Memory Usage: $([math]::Round($memoryDiff / 1MB, 2)) MB" "INFO" "Blue"
+    Write-Log "  CPU Time: $($cpuTime.TotalMilliseconds) ms" "INFO" "Blue"
+}
+
+
     
     while ($retryCount -lt $MaxRetries) {
         try {
@@ -298,9 +329,46 @@ function Remove-RegistryValue {
                 return $false
             }
         }
+    }\n    \n    return $false\n}\n\n# Enhanced progress tracking function
+function Show-Progress {
+    param(
+        [string]$Activity,
+        [string]$Status,
+        [int]$PercentComplete = 0,
+        [int]$CurrentOperation = 0,
+        [int]$TotalOperations = 0
+    )
+    
+    if ($CurrentOperation -gt 0 -and $TotalOperations -gt 0) {
+        $PercentComplete = [math]::Round(($CurrentOperation / $TotalOperations) * 100, 1)
+        $Status = \"$Status ($CurrentOperation/$TotalOperations)\"
     }
     
-    return $false
+    Write-Progress -Activity $Activity -Status $Status -PercentComplete $PercentComplete
+    Write-Log \"[Progress ${PercentComplete}%] ${Activity}: ${Status}\" \"INFO\" \"Cyan\"
+}
+
+# Performance monitoring function
+function Start-PerformanceMonitoring {
+    $script:StartTime = Get-Date
+    $script:StartMemory = [System.GC]::GetTotalMemory($false)
+    $script:StartProcess = Get-Process -Id $PID
+    Write-Log \"Performance monitoring started\" \"INFO\" \"Blue\"
+}
+
+function Stop-PerformanceMonitoring {
+    $endTime = Get-Date
+    $endMemory = [System.GC]::GetTotalMemory($false)
+    $endProcess = Get-Process -Id $PID
+    
+    $executionTime = $endTime - $script:StartTime
+    $memoryDiff = $endMemory - $script:StartMemory
+    $cpuTime = $endProcess.TotalProcessorTime - $script:StartProcess.TotalProcessorTime
+    
+    Write-Log \"Performance Summary:\" \"INFO\" \"Blue\"
+    Write-Log \"  Execution Time: $($executionTime.TotalSeconds.ToString('F2')) seconds\" \"INFO\" \"Blue\"
+    Write-Log \"  Memory Usage: $([math]::Round($memoryDiff / 1MB, 2)) MB\" \"INFO\" \"Blue\"
+    Write-Log \"  CPU Time: $($cpuTime.TotalMilliseconds) ms\" \"INFO\" \"Blue\"
 }
 
 # Function to load configuration from file
@@ -427,11 +495,10 @@ try {
         }
     }
     
-    Write-Log ""
-    Write-Log "Starting regional settings reset..." "INFO" "Green"
+    Write-Log \"\"
+    Write-Log \"Starting regional settings reset...\" \"INFO\" \"Green\"
     $startTime = Get-Date
-    
-    # Validate write access to registry
+    Start-PerformanceMonitoring    # Validate write access to registry
     try {
         $testPath = "HKCU:\Software\RegionalSettingsTest"
         New-Item -Path $testPath -Force | Out-Null
@@ -474,14 +541,16 @@ catch {
     $totalBackups = ($RegPaths.Values | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum
     $currentBackup = 0
     
+    Show-Progress -Activity "Registry Backup" -Status "Initializing backup process" -PercentComplete 0
+    
     try {
         foreach ($category in $RegPaths.Keys) {
             Write-Log "Backing up $category settings..." "INFO" "Blue"
             foreach ($regPath in $RegPaths[$category]) {
                 $currentBackup++
                 $keyName = $regPath -replace ".*\\\\", ""
-                $progressPercent = [math]::Round(($currentBackup / $totalBackups) * 100, 1)
-                Write-Log "[$progressPercent%] Backing up: $keyName" "INFO" "Blue"
+                
+                Show-Progress -Activity "Registry Backup" -Status "Backing up: $keyName" -CurrentOperation $currentBackup -TotalOperations $totalBackups
                 
                 $backupResult = Backup-Registry -KeyPath $regPath -BackupName "${category}_${keyName}"
                 if (-not $backupResult) {
@@ -860,23 +929,22 @@ catch {
         }
         
         # Reset Firefox regional settings (if Firefox is installed)
-        $firefoxPrefFile = "$env:APPDATA\Mozilla\Firefox\Profiles\*\prefs.js"
         $firefoxProfiles = Get-ChildItem -Path "$env:APPDATA\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue 2>$null
         
         if ($firefoxProfiles) {
-            foreach ($profile in $firefoxProfiles) {
-                $prefsFile = Join-Path $profile.FullName "prefs.js"
+            foreach ($firefoxProfile in $firefoxProfiles) {
+                $prefsFile = Join-Path $firefoxProfile.FullName "prefs.js"
                 if (Test-Path $prefsFile) {
                     try {
                         $prefsContent = Get-Content $prefsFile -ErrorAction Stop
                         $newPrefs = $prefsContent | Where-Object { $_ -notmatch 'intl\\.accept_languages' }
                         $newPrefs += "user_pref(`"intl.accept_languages`", `"$Locale`");"
                         $newPrefs | Set-Content $prefsFile -ErrorAction Stop
-                        Write-Log "Firefox profile updated: $($profile.Name)" "INFO" "Green"
+                        Write-Log "Firefox profile updated: $($firefoxProfile.Name)" "INFO" "Green"
                         $ieSettingsApplied++
                     }
                     catch {
-                        Write-Log "Could not update Firefox profile $($profile.Name): $($_.Exception.Message)" "WARN" "Yellow"
+                        Write-Log "Could not update Firefox profile $($firefoxProfile.Name): $($_.Exception.Message)" "WARN" "Yellow"
                         $ieSettingsFailed++
                     }
                 }
@@ -996,6 +1064,8 @@ catch {
     # Calculate execution time and statistics
     $endTime = Get-Date
     $executionTime = $endTime - $startTime
+    Stop-PerformanceMonitoring
+    Write-Progress -Activity \"Regional Settings Reset\" -Completed
     
     Write-Log ""
     Write-Log "========================================" "INFO" "Magenta"

@@ -1,0 +1,40 @@
+{
+    "custom_locales": {
+        "en-AU": {
+            "name": "English (Australia)",
+            "country": "Australia", 
+            "shortDate": "d/MM/yyyy",
+            "longDate": "dddd, d MMMM yyyy",
+            "timeFormat": "h:mm:ss tt",
+            "currency": "$",
+            "decimalSep": ".",
+            "thousandSep": ",",
+            "listSep": ",",
+            "countryCode": 61
+        },
+        "pt-BR": {
+            "name": "Portuguese (Brazil)",
+            "country": "Brazil",
+            "shortDate": "dd/MM/yyyy", 
+            "longDate": "dddd, d 'de' MMMM 'de' yyyy",
+            "timeFormat": "HH:mm:ss",
+            "currency": "R$",
+            "decimalSep": ",",
+            "thousandSep": ".",
+            "listSep": ";",
+            "countryCode": 55
+        },
+        "zh-TW": {
+            "name": "Chinese (Traditional, Taiwan)",
+            "country": "Taiwan",
+            "shortDate": "yyyy/M/d",
+            "longDate": "yyyy年M月d日",
+            "timeFormat": "tt h:mm:ss",
+            "currency": "NT$",
+            "decimalSep": ".",
+            "thousandSep": ",",
+            "listSep": ",",
+            "countryCode": 886
+        }
+    }
+}
