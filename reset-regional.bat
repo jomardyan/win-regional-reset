@@ -227,12 +227,25 @@ echo   log=file        Specify custom log file path
 echo   /?, -h, help    Show this help message
 echo.
 echo EXAMPLES:
+echo   Basic Usage:
 echo   %~nx0                         Reset to Polish (default) with prompts
 echo   %~nx0 en-US                   Reset to English (US) with prompts
 echo   %~nx0 de-DE force             Reset to German without prompts
+echo.
+echo   Advanced Usage:
 echo   %~nx0 silent                  Silent reset to default locale
 echo   %~nx0 fr-FR config=custom.json Use custom configuration
 echo   %~nx0 en-GB log=custom.log    Reset with custom log file
+echo   %~nx0 es-ES force nobackup    Reset without backup (not recommended)
+echo.
+echo   Enterprise Deployment:
+echo   %~nx0 en-US force config=corporate.json log=\\server\logs\%COMPUTERNAME%.log
+echo   %~nx0 config=kiosk.json silent     Automated kiosk setup
+echo.
+echo   Troubleshooting:
+echo   %~nx0 /?                      Show this help
+echo   backup-manager.bat list       List available backups
+echo   validate.bat                  Run system validation
 echo.
 echo REQUIREMENTS:
 echo   - Windows 10/11

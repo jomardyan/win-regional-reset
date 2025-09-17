@@ -318,7 +318,7 @@ function Import-Configuration {
         return $config
     }
     catch {
-        Write-Log "Failed to load configuration from $ConfigPath: $($_.Exception.Message)" "WARN" "Yellow"
+        Write-Log "Failed to load configuration from ${ConfigPath}: $($_.Exception.Message)" "WARN" "Yellow"
         return @{}
     }
 }
@@ -980,7 +980,7 @@ catch {
                     }
                 }
                 catch {
-                    Write-Log "Error accessing MRU path $mruPath: $($_.Exception.Message)" "WARN" "Yellow"
+                    Write-Log "Error accessing MRU path ${mruPath}: $($_.Exception.Message)" "WARN" "Yellow"
                 }
             } else {
                 Write-Log "MRU path does not exist: $mruPath" "INFO" "Gray"
@@ -1079,7 +1079,6 @@ catch {
     } else {
         exit 0  # Complete success
     }
-}
 catch {
     Write-Log "Critical error during script execution: $($_.Exception.Message)" "ERROR" "Red"
     Write-Log "Stack trace: $($_.ScriptStackTrace)" "ERROR" "Red"

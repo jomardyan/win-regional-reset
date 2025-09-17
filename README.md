@@ -1,10 +1,10 @@
-# Windows Regional Settings Reset - Enhanced Edition v2.0
+# Windows Regional Settings Reset v2.0
 
 A comprehensive PowerShell script and batch wrapper suite to reset all Windows regional settings, including Windows 11 registry memory slots. Features advanced error handling, configuration management, backup/restore capabilities, and comprehensive application support. Defaults to Polish (pl-PL) locale but supports multiple languages with extensive customization.
 
 ## 🚀 Quick Start
 
-### Method 1: Enhanced Batch Wrapper (Recommended)
+### Method 1: Batch Wrapper (Recommended)
 
 **Right-click** `reset-regional.bat` and select **"Run as administrator"**
 
@@ -71,7 +71,7 @@ backup-manager.bat cleanup 30
 backup-manager.bat verify
 ```
 
-## ✨ Enhanced Features
+## ✨ Key Features
 
 - **🔧 Comprehensive Reset**: Resets all Windows regional settings including:
   - International settings (date, time, currency formats)
@@ -101,7 +101,7 @@ backup-manager.bat verify
   - Point-in-time restore capabilities
   - Backup cleanup and management tools
   
-- **🚀 Enhanced User Experience**:
+- **🚀 Optimized User Experience**:
   - Silent mode for automation
   - Progress indicators and status reporting
   - Comprehensive validation and testing
@@ -131,12 +131,11 @@ backup-manager.bat verify
 
 ## 📁 Files
 
-- `Reset-RegionalSettings.ps1` - Enhanced PowerShell script with advanced features
-- `reset-regional.bat` - Enhanced batch wrapper with comprehensive options
+- `Reset-RegionalSettings.ps1` - Main PowerShell script with advanced features
+- `reset-regional.bat` - Batch wrapper with comprehensive options and examples
 - `validate.bat` - Comprehensive validation and testing script
 - `backup-manager.bat` - Advanced backup management utility
 - `config.json` - Configuration file template
-- `examples.bat` - Usage examples and scenarios
 - `README.md` - This documentation
 - `LICENSE` - MIT license file
 
@@ -189,7 +188,7 @@ backup-manager.bat verify
 - **Disk Space**: Minimum 50MB free space for backups
 - **Registry Access**: Full registry read/write permissions
 
-## 🛡️ Enhanced Safety Features
+## 🛡️ Safety Features
 
 - **Multi-Layer Backups**: Timestamped registry backups with integrity verification
 - **Rollback Capability**: Complete restore from any backup point
@@ -406,7 +405,7 @@ powershell -Command "Get-WinSystemLocale; Get-WinUserLanguageList; Get-WinHomeLo
 
 ## 📊 Technical Details
 
-### Enhanced Logging System
+### Logging System
 - **Log Levels**: ERROR, WARN, INFO, DEBUG
 - **Automatic Timestamping**: All operations tracked with precise timestamps
 - **Structured Format**: Machine-readable log format for automation
