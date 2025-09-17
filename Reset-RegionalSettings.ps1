@@ -255,7 +255,10 @@ function Set-RegistryValue {
         }
     }
     
-    }\n    }\n    \n    return $false\n}\n\n# Enhanced progress tracking function
+    return $false
+}
+
+# Enhanced progress tracking function
 function Show-Progress {
     param(
         [string]$Activity,
@@ -297,7 +300,15 @@ function Stop-PerformanceMonitoring {
     Write-Log "  CPU Time: $($cpuTime.TotalMilliseconds) ms" "INFO" "Blue"
 }
 
-
+# Function to remove registry values with retry logic
+function Remove-RegValue {
+    param(
+        [string]$Path,
+        [string]$Name,
+        [int]$MaxRetries = 3
+    )
+    
+    $retryCount = 0
     
     while ($retryCount -lt $MaxRetries) {
         try {
@@ -329,23 +340,28 @@ function Stop-PerformanceMonitoring {
                 return $false
             }
         }
-    }\n    \n    return $false\n}\n\n# Enhanced progress tracking function
-function Show-Progress {
-    param(
-        [string]$Activity,
-        [string]$Status,
-        [int]$PercentComplete = 0,
-        [int]$CurrentOperation = 0,
-        [int]$TotalOperations = 0
-    )
-    
-    if ($CurrentOperation -gt 0 -and $TotalOperations -gt 0) {
-        $PercentComplete = [math]::Round(($CurrentOperation / $TotalOperations) * 100, 1)
-        $Status = \"$Status ($CurrentOperation/$TotalOperations)\"
     }
     
-    Write-Progress -Activity $Activity -Status $Status -PercentComplete $PercentComplete
-    Write-Log \"[Progress ${PercentComplete}%] ${Activity}: ${Status}\" \"INFO\" \"Cyan\"
+    return $false
+}
+
+# Function to load configuration from file
+function Import-Configuration {
+    param([string]$ConfigPath)
+    
+    if (-not $ConfigPath -or -not (Test-Path $ConfigPath)) {
+        Write-Log "No configuration file specified or found, using defaults" "INFO" "Blue"
+        return @{}
+    }
+    
+    try {
+        $config = Get-Content $ConfigPath | ConvertFrom-Json
+        Write-Log "Loaded configuration from: $ConfigPath" "INFO" "Green"
+        return $config
+    } catch {
+        Write-Log "Failed to load configuration: $($_.Exception.Message)" "ERROR" "Red"
+        return @{}
+    }
 }
 
 # Performance monitoring function
