@@ -5,8 +5,8 @@
     
 .DESCRIPTION
     This script resets all Windows regional settings to a specified locale,
-    including Windows 11 registry memory slots. Defaults to Polish (pl-PL)
-    but allows user customization.
+    including Windows 11 registry memory slots, timezone configuration, and
+    time synchronization. Defaults to Polish (pl-PL) but allows user customization.
     
 .PARAMETER Locale
     Target locale code (e.g., 'pl-PL', 'en-US', 'de-DE')
@@ -178,12 +178,22 @@ function Backup-Registry {
                 Write-Log "Created backup directory: $script:BackupPath" "INFO" "Blue"
             }
             
+            # Convert PowerShell registry path to Windows registry format
+            $winRegPath = $KeyPath -replace "HKCU:", "HKEY_CURRENT_USER" -replace "HKLM:", "HKEY_LOCAL_MACHINE"
+            
+            # Check if the registry key exists before attempting backup
+            if (-not (Test-Path $KeyPath)) {
+                Write-Log "Registry key does not exist: $KeyPath (skipping backup)" "INFO" "Gray"
+                $script:SuccessCount++
+                return "SKIPPED"
+            }
+            
             $regFile = "$script:BackupPath\$BackupName.reg"
-            $process = Start-Process -FilePath "reg" -ArgumentList "export", $KeyPath, $regFile, "/y" -Wait -NoNewWindow -PassThru
+            $process = Start-Process -FilePath "reg" -ArgumentList "export", "`"$winRegPath`"", "`"$regFile`"", "/y" -Wait -NoNewWindow -PassThru
             
             if ($process.ExitCode -eq 0 -and (Test-Path $regFile)) {
                 $script:SuccessCount++
-                Write-Log "Successfully backed up $KeyPath to $regFile" "INFO" "Green"
+                Write-Log "Successfully backed up $winRegPath to $regFile" "INFO" "Green"
                 return $regFile
             } else {
                 throw "Registry export failed with exit code: $($process.ExitCode)"
@@ -274,7 +284,7 @@ function Show-Progress {
     }
     
     Write-Progress -Activity $Activity -Status $Status -PercentComplete $PercentComplete
-        Write-Log \"[Progress ${PercentComplete}%] ${Activity}: ${Status}\" \"INFO\" \"Cyan\"
+    Write-Log "[Progress ${PercentComplete}%] ${Activity}: ${Status}" "INFO" "Cyan"
 }
 
 # Performance monitoring function
@@ -364,48 +374,7 @@ function Import-Configuration {
     }
 }
 
-# Performance monitoring function
-function Start-PerformanceMonitoring {
-    $script:StartTime = Get-Date
-    $script:StartMemory = [System.GC]::GetTotalMemory($false)
-    $script:StartProcess = Get-Process -Id $PID
-    Write-Log \"Performance monitoring started\" \"INFO\" \"Blue\"
-}
 
-function Stop-PerformanceMonitoring {
-    $endTime = Get-Date
-    $endMemory = [System.GC]::GetTotalMemory($false)
-    $endProcess = Get-Process -Id $PID
-    
-    $executionTime = $endTime - $script:StartTime
-    $memoryDiff = $endMemory - $script:StartMemory
-    $cpuTime = $endProcess.TotalProcessorTime - $script:StartProcess.TotalProcessorTime
-    
-    Write-Log \"Performance Summary:\" \"INFO\" \"Blue\"
-    Write-Log \"  Execution Time: $($executionTime.TotalSeconds.ToString('F2')) seconds\" \"INFO\" \"Blue\"
-    Write-Log \"  Memory Usage: $([math]::Round($memoryDiff / 1MB, 2)) MB\" \"INFO\" \"Blue\"
-    Write-Log \"  CPU Time: $($cpuTime.TotalMilliseconds) ms\" \"INFO\" \"Blue\"
-}
-
-# Function to load configuration from file
-function Import-Configuration {
-    param([string]$ConfigPath)
-    
-    if (-not $ConfigPath -or -not (Test-Path $ConfigPath)) {
-        Write-Log "No configuration file specified or found, using defaults" "INFO" "Blue"
-        return @{}
-    }
-    
-    try {
-        $config = Get-Content $ConfigPath | ConvertFrom-Json
-        Write-Log "Loaded configuration from: $ConfigPath" "INFO" "Green"
-        return $config
-    }
-    catch {
-        Write-Log "Failed to load configuration from ${ConfigPath}: $($_.Exception.Message)" "WARN" "Yellow"
-        return @{}
-    }
-}
 
 # Function to restore from backup
 function Restore-FromBackup {
@@ -426,18 +395,29 @@ function Restore-FromBackup {
         
         Write-Log "Found $($regFiles.Count) backup files. Starting restore..." "INFO" "Blue"
         
+        $restoredCount = 0
+        $failedCount = 0
+        
         foreach ($regFile in $regFiles) {
+            # Skip files that were marked as SKIPPED during backup
+            if ((Get-Content $regFile -TotalCount 1) -eq "SKIPPED") {
+                Write-Log "Skipping restore of: $($regFile.Name) (was skipped during backup)" "INFO" "Gray"
+                continue
+            }
+            
             Write-Log "Restoring: $($regFile.Name)" "INFO" "Cyan"
-            $process = Start-Process -FilePath "reg" -ArgumentList "import", $regFile.FullName -Wait -NoNewWindow -PassThru
+            $process = Start-Process -FilePath "reg" -ArgumentList "import", "`"$($regFile.FullName)`"" -Wait -NoNewWindow -PassThru
             
             if ($process.ExitCode -eq 0) {
                 Write-Log "Successfully restored: $($regFile.Name)" "INFO" "Green"
+                $restoredCount++
             } else {
                 Write-Log "Failed to restore: $($regFile.Name) (Exit code: $($process.ExitCode))" "ERROR" "Red"
+                $failedCount++
             }
         }
         
-        Write-Log "Backup restore completed" "INFO" "Green"
+        Write-Log "Backup restore completed: $restoredCount successful, $failedCount failed" "INFO" "Green"
         return $true
     }
     catch {
@@ -511,8 +491,8 @@ try {
         }
     }
     
-    Write-Log \"\"
-    Write-Log \"Starting regional settings reset...\" \"INFO\" \"Green\"
+    Write-Log ""
+    Write-Log "Starting regional settings reset..." "INFO" "Green"
     $startTime = Get-Date
     Start-PerformanceMonitoring    # Validate write access to registry
     try {
@@ -552,29 +532,52 @@ catch {
         )
     }
     
-    # Backup current settings with progress tracking
+    # Backup current settings with progress tracking and validation
     Write-Log "Creating registry backups..." "INFO" "Blue"
-    $totalBackups = ($RegPaths.Values | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum
+    
+    # Pre-validate which registry keys actually exist
+    $validPaths = @{}
+    $totalValidPaths = 0
+    
+    foreach ($category in $RegPaths.Keys) {
+        $validPaths[$category] = @()
+        foreach ($regPath in $RegPaths[$category]) {
+            if (Test-Path $regPath) {
+                $validPaths[$category] += $regPath
+                $totalValidPaths++
+            } else {
+                Write-Log "Registry key does not exist, skipping backup: $regPath" "INFO" "Gray"
+            }
+        }
+    }
+    
+    Write-Log "Found $totalValidPaths valid registry keys to backup" "INFO" "Blue"
     $currentBackup = 0
     
     Show-Progress -Activity "Registry Backup" -Status "Initializing backup process" -PercentComplete 0
     
     try {
-        foreach ($category in $RegPaths.Keys) {
-            Write-Log "Backing up $category settings..." "INFO" "Blue"
-            foreach ($regPath in $RegPaths[$category]) {
-                $currentBackup++
-                $keyName = $regPath -replace ".*\\\\", ""
-                
-                Show-Progress -Activity "Registry Backup" -Status "Backing up: $keyName" -CurrentOperation $currentBackup -TotalOperations $totalBackups
-                
-                $backupResult = Backup-Registry -KeyPath $regPath -BackupName "${category}_${keyName}"
-                if (-not $backupResult) {
-                    Write-Log "Backup failed for $regPath, but continuing..." "WARN" "Yellow"
+        foreach ($category in $validPaths.Keys) {
+            if ($validPaths[$category].Count -gt 0) {
+                Write-Log "Backing up $category settings..." "INFO" "Blue"
+                foreach ($regPath in $validPaths[$category]) {
+                    $currentBackup++
+                    $keyName = ($regPath -split '\\')[-1] -replace '[\\/:*?"<>|]', '_'
+                    
+                    Show-Progress -Activity "Registry Backup" -Status "Backing up: $keyName" -CurrentOperation $currentBackup -TotalOperations $totalValidPaths
+                    
+                    $backupResult = Backup-Registry -KeyPath $regPath -BackupName "${category}_${keyName}"
+                    if (-not $backupResult) {
+                        Write-Log "Backup failed for $regPath, but continuing..." "WARN" "Yellow"
+                    } elseif ($backupResult -eq "SKIPPED") {
+                        Write-Log "Backup skipped for $regPath (key does not exist)" "INFO" "Gray"
+                    }
                 }
+            } else {
+                Write-Log "No valid registry keys found for $category category" "INFO" "Gray"
             }
         }
-        Write-Log "Registry backup phase completed" "INFO" "Green"
+        Write-Log "Registry backup phase completed ($currentBackup/$totalValidPaths processed)" "INFO" "Green"
     }
     catch {
         Write-Log "Error during backup phase: $($_.Exception.Message)" "ERROR" "Red"
@@ -631,6 +634,7 @@ catch {
                     "iNegCurr" = "8"
                     "iPaperSize" = "9"
                     "iMeasure" = "0"
+                    "sTimeZoneKeyName" = "Central European Standard Time"
                 }
             }
             "en-US" {
@@ -658,6 +662,7 @@ catch {
                     "iNegCurr" = "0"
                     "iPaperSize" = "1"
                     "iMeasure" = "1"
+                    "sTimeZoneKeyName" = "Eastern Standard Time"
                 }
             }
             "en-GB" {
@@ -685,6 +690,7 @@ catch {
                     "iNegCurr" = "1"
                     "iPaperSize" = "9"
                     "iMeasure" = "0"
+                    "sTimeZoneKeyName" = "GMT Standard Time"
                 }
             }
             "de-DE" {
@@ -712,6 +718,7 @@ catch {
                     "iNegCurr" = "8"
                     "iPaperSize" = "9"
                     "iMeasure" = "0"
+                    "sTimeZoneKeyName" = "W. Europe Standard Time"
                 }
             }
             "fr-FR" {
@@ -739,6 +746,7 @@ catch {
                     "iNegCurr" = "8"
                     "iPaperSize" = "9"
                     "iMeasure" = "0"
+                    "sTimeZoneKeyName" = "Romance Standard Time"
                 }
             }
             default {
@@ -746,6 +754,7 @@ catch {
                 $localeSettings = @{
                     "sLanguage" = $Locale.Split('-')[0].ToUpper()
                     "sCountry" = $SupportedLocales[$Locale]
+                    "sTimeZoneKeyName" = "Eastern Standard Time"
                 }
             }
         }
@@ -849,27 +858,31 @@ catch {
     Write-Log "Setting system locale..." "INFO" "Blue"
     
     try {
-        # Get the geographic ID for the locale
-        $geoId = switch ($Locale) {
-            "pl-PL" { 191 }
-            "en-US" { 244 }
-            "en-GB" { 242 }
-            "de-DE" { 94 }
-            "fr-FR" { 84 }
-            "es-ES" { 217 }
-            "it-IT" { 118 }
-            "pt-PT" { 193 }
-            "ru-RU" { 203 }
-            "zh-CN" { 45 }
-            "ja-JP" { 122 }
-            "ko-KR" { 134 }
-            default { 244 }
+        # Get the geographic ID and timezone for the locale
+        $localeSettings = switch ($Locale) {
+            "pl-PL" { @{ GeoId = 191; TimeZone = "Central European Standard Time" } }
+            "en-US" { @{ GeoId = 244; TimeZone = "Eastern Standard Time" } }
+            "en-GB" { @{ GeoId = 242; TimeZone = "GMT Standard Time" } }
+            "de-DE" { @{ GeoId = 94; TimeZone = "W. Europe Standard Time" } }
+            "fr-FR" { @{ GeoId = 84; TimeZone = "Romance Standard Time" } }
+            "es-ES" { @{ GeoId = 217; TimeZone = "Romance Standard Time" } }
+            "it-IT" { @{ GeoId = 118; TimeZone = "W. Europe Standard Time" } }
+            "pt-PT" { @{ GeoId = 193; TimeZone = "GMT Standard Time" } }
+            "ru-RU" { @{ GeoId = 203; TimeZone = "Russian Standard Time" } }
+            "zh-CN" { @{ GeoId = 45; TimeZone = "China Standard Time" } }
+            "ja-JP" { @{ GeoId = 122; TimeZone = "Tokyo Standard Time" } }
+            "ko-KR" { @{ GeoId = 134; TimeZone = "Korea Standard Time" } }
+            default { @{ GeoId = 244; TimeZone = "Eastern Standard Time" } }
         }
+        
+        $geoId = $localeSettings.GeoId
+        $timeZone = $localeSettings.TimeZone
         
         # Use PowerShell cmdlets for internationalization with error handling
         $systemLocaleSuccess = $false
         $userLanguageSuccess = $false
         $homeLocationSuccess = $false
+        $timeZoneSuccess = $false
         
         # Set system locale
         try {
@@ -901,9 +914,19 @@ catch {
             Write-Log "Could not set home location: $($_.Exception.Message)" "WARN" "Yellow"
         }
         
+        # Set timezone
+        try {
+            Set-TimeZone -Id $timeZone -ErrorAction Stop
+            $timeZoneSuccess = $true
+            Write-Log "Timezone set to: $timeZone" "INFO" "Green"
+        }
+        catch {
+            Write-Log "Could not set timezone: $($_.Exception.Message)" "WARN" "Yellow"
+        }
+        
         # Summary of system locale operations
-        $successCount = @($systemLocaleSuccess, $userLanguageSuccess, $homeLocationSuccess) | Where-Object { $_ } | Measure-Object | Select-Object -ExpandProperty Count
-        Write-Log "System locale operations: $successCount/3 successful" "INFO" "Green"
+        $successCount = @($systemLocaleSuccess, $userLanguageSuccess, $homeLocationSuccess, $timeZoneSuccess) | Where-Object { $_ } | Measure-Object | Select-Object -ExpandProperty Count
+        Write-Log "System locale operations: $successCount/4 successful" "INFO" "Green"
         
         if ($successCount -eq 0) {
             Write-Log "All system locale operations failed. Manual configuration may be required." "WARN" "Yellow"
@@ -911,6 +934,92 @@ catch {
     }
     catch {
         Write-Log "Error in system locale section: $($_.Exception.Message)" "ERROR" "Red"
+    }
+
+    # Reset and synchronize time settings
+    Write-Log ""
+    Write-Log "Configuring time synchronization..." "INFO" "Blue"
+    
+    try {
+        # Stop Windows Time service if running
+        $w32timeService = Get-Service -Name "w32time" -ErrorAction SilentlyContinue
+        if ($w32timeService -and $w32timeService.Status -eq "Running") {
+            Write-Log "Stopping Windows Time service..." "INFO" "Blue"
+            Stop-Service -Name "w32time" -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+        }
+        
+        # Unregister and re-register Windows Time service
+        try {
+            Write-Log "Re-registering Windows Time service..." "INFO" "Blue"
+            Start-Process -FilePath "w32tm" -ArgumentList "/unregister" -Wait -NoNewWindow -PassThru | Out-Null
+            Start-Sleep -Seconds 2
+            $regResult = Start-Process -FilePath "w32tm" -ArgumentList "/register" -Wait -NoNewWindow -PassThru
+            
+            if ($regResult.ExitCode -eq 0) {
+                Write-Log "Windows Time service re-registered successfully" "INFO" "Green"
+            } else {
+                Write-Log "Windows Time service registration returned exit code: $($regResult.ExitCode)" "WARN" "Yellow"
+            }
+        }
+        catch {
+            Write-Log "Could not re-register Windows Time service: $($_.Exception.Message)" "WARN" "Yellow"
+        }
+        
+        # Start Windows Time service
+        try {
+            Start-Service -Name "w32time" -ErrorAction Stop
+            Write-Log "Windows Time service started" "INFO" "Green"
+        }
+        catch {
+            Write-Log "Could not start Windows Time service: $($_.Exception.Message)" "WARN" "Yellow"
+        }
+        
+        # Configure time server settings
+        try {
+            Write-Log "Configuring time server settings..." "INFO" "Blue"
+            $configResult = Start-Process -FilePath "w32tm" -ArgumentList "/config", "/manualpeerlist:`"time.windows.com,0x1`"", "/syncfromflags:manual", "/reliable:yes", "/update" -Wait -NoNewWindow -PassThru
+            
+            if ($configResult.ExitCode -eq 0) {
+                Write-Log "Time server configuration completed" "INFO" "Green"
+            } else {
+                Write-Log "Time server configuration returned exit code: $($configResult.ExitCode)" "WARN" "Yellow"
+            }
+        }
+        catch {
+            Write-Log "Could not configure time server: $($_.Exception.Message)" "WARN" "Yellow"
+        }
+        
+        # Force immediate time synchronization
+        try {
+            Write-Log "Performing immediate time synchronization..." "INFO" "Blue"
+            $syncResult = Start-Process -FilePath "w32tm" -ArgumentList "/resync", "/force" -Wait -NoNewWindow -PassThru
+            
+            if ($syncResult.ExitCode -eq 0) {
+                Write-Log "Time synchronization completed successfully" "INFO" "Green"
+            } else {
+                Write-Log "Time synchronization returned exit code: $($syncResult.ExitCode)" "WARN" "Yellow"
+            }
+        }
+        catch {
+            Write-Log "Could not perform time synchronization: $($_.Exception.Message)" "WARN" "Yellow"
+        }
+        
+        # Display current time information
+        try {
+            $currentTime = Get-Date
+            $timeZoneInfo = Get-TimeZone
+            Write-Log "Current system time: $($currentTime.ToString('yyyy-MM-dd HH:mm:ss'))" "INFO" "Cyan"
+            Write-Log "Current timezone: $($timeZoneInfo.Id) ($($timeZoneInfo.DisplayName))" "INFO" "Cyan"
+        }
+        catch {
+            Write-Log "Could not retrieve current time information: $($_.Exception.Message)" "WARN" "Yellow"
+        }
+        
+        Write-Log "Time synchronization configuration completed" "INFO" "Green"
+    }
+    catch {
+        Write-Log "Error in time synchronization section: $($_.Exception.Message)" "ERROR" "Red"
     }
 
     # Additional reset capabilities - Browser and Office settings
@@ -1081,7 +1190,7 @@ catch {
     $endTime = Get-Date
     $executionTime = $endTime - $startTime
     Stop-PerformanceMonitoring
-    Write-Progress -Activity \"Regional Settings Reset\" -Completed
+    Write-Progress -Activity "Regional Settings Reset" -Completed
     
     Write-Log ""
     Write-Log "========================================" "INFO" "Magenta"
@@ -1095,6 +1204,16 @@ catch {
     Write-Log "  Successful Operations: $script:SuccessCount" "INFO" "Green"
     Write-Log "  Failed Operations: $script:ErrorCount" "INFO" $(if ($script:ErrorCount -gt 0) { "Red" } else { "Green" })
     Write-Log "  Success Rate: $([math]::Round(($script:SuccessCount / [math]::Max($script:OperationCount, 1)) * 100, 1))%" "INFO" "Blue"
+    Write-Log ""
+    Write-Log "Configuration Applied:" "INFO" "White"
+    Write-Log "  • International settings and formats" "INFO" "Cyan"
+    Write-Log "  • Windows 11 memory slots cleared" "INFO" "Cyan"
+    Write-Log "  • System locale and language preferences" "INFO" "Cyan"
+    Write-Log "  • Timezone configuration" "INFO" "Cyan"
+    Write-Log "  • Time synchronization with Windows Time" "INFO" "Cyan"
+    Write-Log "  • Browser language preferences" "INFO" "Cyan"
+    Write-Log "  • Office application locales" "INFO" "Cyan"
+    Write-Log "  • MRU lists cleanup" "INFO" "Cyan"
     Write-Log ""
     Write-Log "Log File: $script:LogFile" "INFO" "Blue"
     Write-Log "Backup Directory: $script:BackupPath" "INFO" "Blue"
