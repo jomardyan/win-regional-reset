@@ -1,5 +1,7 @@
 # Windows Regional Settings Reset v2.0
 
+> **GitHub Description**: *Comprehensive Windows regional settings reset tool with PowerShell automation, 12+ locale support, backup/restore system, and enterprise deployment features*
+
 A comprehensive PowerShell script and batch wrapper suite to reset all Windows regional settings, including Windows 11 registry memory slots. Features advanced error handling, configuration management, backup/restore capabilities, and comprehensive application support. Defaults to Polish (pl-PL) locale but supports multiple languages with extensive customization.
 
 ## 🚀 Quick Start

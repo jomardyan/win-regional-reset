@@ -1,0 +1,21 @@
+# Temporary files
+*.tmp
+*.temp
+~*
+
+# Log files
+*.log
+
+# Backup files
+*.bak
+*.backup
+
+# System files
+Thumbs.db
+.DS_Store
+
+# PowerShell specific
+*.ps1xml
+
+# Test outputs
+test-results/
