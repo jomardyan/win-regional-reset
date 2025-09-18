@@ -74,9 +74,23 @@ jobs:
           $totalFiles++
           Write-Host "Checking: $script" -ForegroundColor Yellow
           try {
-            $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $script -Raw), [ref]$null)
-            Write-Host "✅ $script - Syntax OK" -ForegroundColor Green
-            $validFiles++
+            if (Test-Path $script) {
+              $errors = $null
+              $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $script -Raw), [ref]$errors)
+              if ($errors.Count -eq 0) {
+                Write-Host "✅ $script - Syntax OK" -ForegroundColor Green
+                $validFiles++
+              } else {
+                Write-Host "❌ $script - Parse Errors Found:" -ForegroundColor Red
+                foreach ($error in $errors) {
+                  Write-Host "  $error" -ForegroundColor Red
+                }
+                $allValid = $false
+              }
+            } else {
+              Write-Host "❌ $script - File not found" -ForegroundColor Red
+              $allValid = $false
+            }
           }
           catch {
             Write-Host "❌ $script - Syntax Error: $($_.Exception.Message)" -ForegroundColor Red
@@ -89,9 +103,23 @@ jobs:
           $totalFiles++
           Write-Host "Checking: $module" -ForegroundColor Yellow
           try {
-            $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $module -Raw), [ref]$null)
-            Write-Host "✅ $module - Syntax OK" -ForegroundColor Green
-            $validFiles++
+            if (Test-Path $module) {
+              $errors = $null
+              $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $module -Raw), [ref]$errors)
+              if ($errors.Count -eq 0) {
+                Write-Host "✅ $module - Syntax OK" -ForegroundColor Green
+                $validFiles++
+              } else {
+                Write-Host "❌ $module - Parse Errors Found:" -ForegroundColor Red
+                foreach ($error in $errors) {
+                  Write-Host "  $error" -ForegroundColor Red
+                }
+                $allValid = $false
+              }
+            } else {
+              Write-Host "❌ $module - File not found" -ForegroundColor Red
+              $allValid = $false
+            }
           }
           catch {
             Write-Host "❌ $module - Syntax Error: $($_.Exception.Message)" -ForegroundColor Red
@@ -102,7 +130,14 @@ jobs:
         Write-Host "`n📊 Syntax Validation Summary:" -ForegroundColor Cyan
         Write-Host "Total Files: $totalFiles" -ForegroundColor White
         Write-Host "Valid Files: $validFiles" -ForegroundColor Green
-        Write-Host "Success Rate: $([math]::Round(($validFiles / $totalFiles) * 100, 1))%" -ForegroundColor White
+        
+        # Avoid division by zero
+        if ($totalFiles -gt 0) {
+          $successRate = [math]::Round(($validFiles / $totalFiles) * 100, 1)
+          Write-Host "Success Rate: $successRate%" -ForegroundColor White
+        } else {
+          Write-Host "Success Rate: N/A (No files found)" -ForegroundColor Yellow
+        }
         
         if (-not $allValid) {
           Write-Host "`n❌ PowerShell syntax validation failed!" -ForegroundColor Red
@@ -229,15 +264,31 @@ jobs:
         $testConfig | ConvertTo-Json -Depth 3 | Set-Content -Path $configPath
         
         try {
-          # Test script import and basic functionality
-          Write-Host "Importing script..." -ForegroundColor Yellow
-          . .\scripts\Reset-RegionalSettings.ps1 -Locale "${{ matrix.locale }}" -ConfigFile $configPath -WhatIf -Verbose
+          # Test script syntax first
+          Write-Host "Testing script syntax..." -ForegroundColor Yellow
+          $errors = $null
+          $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content "scripts\Reset-RegionalSettings.ps1" -Raw), [ref]$errors)
           
-          Write-Host "✅ Script import and dry run successful for ${{ matrix.locale }}" -ForegroundColor Green
+          if ($errors.Count -gt 0) {
+            throw "Script has syntax errors"
+          }
+          
+          # Test script execution with WhatIf
+          Write-Host "Testing script execution (WhatIf)..." -ForegroundColor Yellow
+          & .\scripts\Reset-RegionalSettings.ps1 -Locale "${{ matrix.locale }}" -ConfigFile $configPath -WhatIf -Verbose
+          
+          Write-Host "✅ Script dry run successful for ${{ matrix.locale }}" -ForegroundColor Green
         }
         catch {
           Write-Host "❌ Script test failed for ${{ matrix.locale }}: $($_.Exception.Message)" -ForegroundColor Red
           Write-Host "Stack trace: $($_.ScriptStackTrace)" -ForegroundColor Red
+          
+          # Show script content for debugging if syntax error
+          if ($_.Exception.Message -like "*syntax*") {
+            Write-Host "First 20 lines of script:" -ForegroundColor Yellow
+            Get-Content "scripts\Reset-RegionalSettings.ps1" -TotalCount 20 | ForEach-Object { Write-Host "  $_" }
+          }
+          
           exit 1
         }
         finally {
@@ -253,7 +304,17 @@ jobs:
         Write-Host "🧪 Testing Group Policy Script - Profile: ${{ matrix.profile }}" -ForegroundColor Cyan
         
         try {
+          # Test GP script syntax first
+          Write-Host "Testing GP script syntax..." -ForegroundColor Yellow
+          $errors = $null
+          $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content "group-policy\Deploy-RegionalSettings-GP.ps1" -Raw), [ref]$errors)
+          
+          if ($errors.Count -gt 0) {
+            throw "GP script has syntax errors"
+          }
+          
           # Test GP script with dry run
+          Write-Host "Testing GP script execution..." -ForegroundColor Yellow
           & .\group-policy\Deploy-RegionalSettings-GP.ps1 -Locale "${{ matrix.locale }}" -ConfigurationProfile "${{ matrix.profile }}" -DryRun -ReportingEnabled
           
           Write-Host "✅ Group Policy script dry run successful for ${{ matrix.locale }} (${{ matrix.profile }})" -ForegroundColor Green
@@ -261,6 +322,13 @@ jobs:
         catch {
           Write-Host "❌ Group Policy script test failed: $($_.Exception.Message)" -ForegroundColor Red
           Write-Host "Stack trace: $($_.ScriptStackTrace)" -ForegroundColor Red
+          
+          # Show script content for debugging if syntax error
+          if ($_.Exception.Message -like "*syntax*") {
+            Write-Host "First 20 lines of GP script:" -ForegroundColor Yellow
+            Get-Content "group-policy\Deploy-RegionalSettings-GP.ps1" -TotalCount 20 | ForEach-Object { Write-Host "  $_" }
+          }
+          
           exit 1
         }
 
