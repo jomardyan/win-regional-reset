@@ -12,7 +12,7 @@ A comprehensive, enterprise-grade toolkit for managing regional and locale setti
 
 > **📁 New Organized Structure**: The toolkit has been reorganized into logical folders (`scripts/`, `group-policy/`, `modules/`, `config/`, `tests/`, `docs/`) for better maintainability and deployment. See [`docs/FOLDER_STRUCTURE.md`](docs/FOLDER_STRUCTURE.md) for details.
 
-## � Executive Summary
+## Executive Summary
 
 **Windows Regional Settings Reset Toolkit** is a production-ready solution designed for enterprise environments requiring reliable, scalable, and secure management of Windows regional settings. The toolkit supports automated deployment, comprehensive backup strategies, and performance monitoring while maintaining full backward compatibility and extensive validation capabilities.
 
