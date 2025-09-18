@@ -52,6 +52,15 @@ cd cpp
 make && ./regional_settings_reset_v2 --interactive
 ```
 
+### Option 5: Group Policy (Enterprise AD Deployment)
+```batch
+# Active Directory Group Policy deployment
+deploy-regional-gp.bat en-US Enterprise compliance=SOX
+
+# SCCM package deployment
+powershell.exe -ExecutionPolicy Bypass -File Deploy-RegionalSettings-GP.ps1 -ConfigurationProfile Enterprise
+```
+
 ## 🏗️ Architecture Overview
 
 ### Core Capabilities
@@ -60,6 +69,7 @@ make && ./regional_settings_reset_v2 --interactive
 - **Enterprise Security**: AES encryption, audit logging, and backup integrity verification
 - **Performance Optimization**: Parallel processing with up to 4x performance improvement
 - **Automated Operations**: Task scheduling, incremental backups, and maintenance automation
+- **Group Policy Integration**: Active Directory deployment with SCCM compatibility and centralized logging
 
 ### Platform Compatibility Matrix
 
@@ -79,6 +89,7 @@ make && ./regional_settings_reset_v2 --interactive
 | **Backup** | Incremental + Compression | ✅ Production Ready |
 | **Monitoring** | Real-time Performance Metrics | ✅ Production Ready |
 | **Compliance** | SOX/HIPAA Compatible Logging | ✅ Production Ready |
+| **Group Policy** | AD Integration + SCCM Deployment | ✅ Production Ready |
 
 ## 🚀 Quick Start
 
@@ -438,6 +449,242 @@ python test_framework.py --enterprise --coverage --performance
 - **Backup chain management** - Linked restoration sequences
 - **Selective restoration** - Choose specific settings to restore
 - **Dry-run mode** - Preview changes before applying
+
+## 🏢 Active Directory Group Policy Deployment
+
+The toolkit includes enterprise-grade Group Policy deployment capabilities for Active Directory environments, providing centralized management, compliance reporting, and automated deployment across domain-joined systems.
+
+### Group Policy Deployment Overview
+
+#### New Files Added
+- **`Deploy-RegionalSettings-GP.ps1`** - Main Group Policy deployment script
+- **`deploy-regional-gp.bat`** - GP-compatible batch wrapper
+- **`config-gp-template.json`** - Enterprise configuration template
+
+#### Key Features
+- ✅ **Active Directory Integration** - Domain environment detection and SYSVOL logging
+- ✅ **Compliance Reporting** - SOX, HIPAA, ISO27001 audit trail support
+- ✅ **Centralized Logging** - Network share and Event Log integration
+- ✅ **SCCM Compatible** - Ready for System Center Configuration Manager
+- ✅ **Silent Deployment** - Non-interactive execution for automated deployment
+- ✅ **Error Handling** - Comprehensive retry logic and failure reporting
+- ✅ **Configuration Profiles** - Enterprise, Corporate, Standard, and Minimal modes
+
+### Quick Group Policy Setup
+
+#### Method 1: Group Policy Startup Script (Recommended)
+```batch
+# Add to Computer Configuration > Policies > Windows Settings > Scripts > Startup
+deploy-regional-gp.bat en-US Enterprise compliance=SOX networklog=\\domain.com\sysvol\logs
+```
+
+#### Method 2: Group Policy Logon Script
+```batch
+# Add to User Configuration > Policies > Windows Settings > Scripts > Logon
+deploy-regional-gp.bat en-US Corporate target=User reporting
+```
+
+#### Method 3: SCCM Package Deployment
+```powershell
+# SCCM Package Command Line
+powershell.exe -ExecutionPolicy Bypass -File Deploy-RegionalSettings-GP.ps1 -ConfigurationProfile Enterprise -NetworkLogPath "\\server\logs"
+```
+
+### Configuration Profiles
+
+#### Enterprise Profile (Recommended for Large Organizations)
+```batch
+deploy-regional-gp.bat en-US Enterprise compliance=SOX
+```
+- ✅ Full backup with encryption
+- ✅ Performance monitoring
+- ✅ Detailed audit logging
+- ✅ 5 retry attempts
+- ✅ 30-minute timeout
+- ✅ Network backup enabled
+- ✅ SOX/HIPAA compliance support
+
+#### Corporate Profile (Standard Business Deployment)
+```batch
+deploy-regional-gp.bat en-US Corporate compliance=Standard
+```
+- ✅ Standard backup (30-day retention)
+- ✅ Basic audit logging
+- ✅ 3 retry attempts
+- ✅ 20-minute timeout
+- ✅ Network backup enabled
+- ❌ Performance monitoring disabled
+
+#### Standard Profile (Small Business/Workgroup)
+```batch
+deploy-regional-gp.bat en-US Standard
+```
+- ✅ Basic backup (14-day retention)
+- ✅ Minimal audit logging
+- ✅ 2 retry attempts
+- ✅ 15-minute timeout
+- ❌ Network backup disabled
+
+#### Minimal Profile (Testing/Resource-Constrained)
+```batch
+deploy-regional-gp.bat en-US Minimal dryrun
+```
+- ❌ No backups
+- ❌ No audit logging
+- ✅ 1 retry attempt
+- ✅ 10-minute timeout
+- ✅ Perfect for testing
+
+### Group Policy Implementation Guide
+
+#### Step 1: Prepare Domain Environment
+```powershell
+# Create SYSVOL directory structure
+New-Item "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings" -ItemType Directory -Force
+New-Item "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\Logs" -ItemType Directory -Force
+New-Item "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\Backups" -ItemType Directory -Force
+
+# Copy deployment files to SYSVOL
+Copy-Item "Deploy-RegionalSettings-GP.ps1" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
+Copy-Item "Reset-RegionalSettings.ps1" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
+Copy-Item "deploy-regional-gp.bat" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
+Copy-Item "config-gp-template.json" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
+```
+
+#### Step 2: Create Group Policy Object
+```powershell
+# Create new GPO for regional settings
+New-GPO -Name "Corporate Regional Settings" -Domain "domain.com"
+
+# Configure startup script
+Set-GPStartupScript -Name "Corporate Regional Settings" -ScriptName "deploy-regional-gp.bat" -Parameters "en-US Enterprise compliance=SOX networklog=\\domain.com\sysvol\logs"
+
+# Link GPO to appropriate OU
+New-GPLink -Name "Corporate Regional Settings" -Target "OU=Workstations,DC=domain,DC=com" -LinkEnabled Yes
+```
+
+#### Step 3: Configure SCCM Package (Alternative)
+```powershell
+# SCCM Package Configuration
+Package Name: "Regional Settings Reset - Enterprise"
+Source Directory: "\\server\software\RegionalSettings"
+Command Line: "deploy-regional-gp.bat en-US Enterprise compliance=SOX reporting"
+Program Properties:
+  - Run with administrative rights: Yes
+  - Whether or not user is logged on: Yes
+  - Maximum allowed run time: 30 minutes
+  - Estimated installation time: 5 minutes
+```
+
+### Enterprise Compliance and Auditing
+
+#### SOX Compliance Deployment
+```batch
+# Sarbanes-Oxley compliant deployment with full audit trail
+deploy-regional-gp.bat en-US Enterprise compliance=SOX networklog=\\audit-server\sox-logs reporting
+```
+
+#### HIPAA Compliance Deployment
+```batch
+# Healthcare environments with encryption and audit requirements
+deploy-regional-gp.bat en-US Enterprise compliance=HIPAA networklog=\\secure-server\hipaa-logs reporting
+```
+
+#### ISO27001 Compliance Deployment
+```batch
+# Information security management standards compliance
+deploy-regional-gp.bat en-US Enterprise compliance=ISO27001 networklog=\\compliance-server\iso-logs reporting
+```
+
+### Monitoring and Reporting
+
+#### Event Log Integration
+The Group Policy deployment automatically creates Windows Event Log entries:
+- **Event ID 1001**: Successful deployment
+- **Event ID 1002**: Deployment failure
+- **Source**: RegionalSettings-GP
+- **Log**: Application
+
+#### Centralized Logging Structure
+```
+\\domain.com\sysvol\logs\RegionalSettings\
+├── RegionalSettings-GP_COMPUTER01_20240918_143022.log      # Main deployment log
+├── RegionalSettings-Compliance_COMPUTER01_20240918_143022.log  # Compliance audit log
+├── RegionalSettings-Report_COMPUTER01_20240918_143022.xml   # Detailed XML report
+└── deployment-summary.csv                                  # Enterprise summary report
+```
+
+#### PowerBI Dashboard Integration
+```powershell
+# Generate reports for PowerBI consumption
+$Reports = Get-ChildItem "\\domain.com\sysvol\logs\RegionalSettings\*.xml"
+$Summary = $Reports | ForEach-Object { Import-Clixml $_ } | 
+    Select-Object Computer, Status, Duration, Locale, Profile, Timestamp
+
+$Summary | Export-Csv "\\reports\RegionalSettings-Dashboard.csv" -NoTypeInformation
+```
+
+### Troubleshooting Group Policy Deployment
+
+#### Common Issues and Solutions
+
+**Issue: "Access Denied" on SYSVOL**
+```powershell
+# Solution: Verify SYSVOL permissions
+icacls "\\domain.com\SYSVOL\domain.com\scripts" /grant "Domain Computers:(OI)(CI)RX"
+icacls "\\domain.com\SYSVOL\logs" /grant "Domain Computers:(OI)(CI)M"
+```
+
+**Issue: "Script not executing in GP context"**
+```batch
+# Solution: Verify GP settings
+# Computer Configuration > Administrative Templates > System > Scripts
+# - Allow logon scripts to run with elevated privileges: Enabled
+# - Run startup scripts asynchronously: Disabled
+# - Maximum wait time for Group Policy scripts: 600 seconds
+```
+
+**Issue: "PowerShell execution policy restriction"**
+```batch
+# Solution: The script automatically bypasses execution policy
+# Or configure via Group Policy:
+# Computer Configuration > Administrative Templates > Windows Components > Windows PowerShell
+# - Turn on Script Execution: Enabled (Allow local scripts and remote signed scripts)
+```
+
+#### Validation Commands
+```batch
+# Test Group Policy deployment manually
+deploy-regional-gp.bat en-US Enterprise dryrun reporting
+
+# Check Group Policy application
+gpresult /h gp-report.html
+gpupdate /force
+
+# Verify Event Log entries
+Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='RegionalSettings-GP'}
+```
+
+### Best Practices for Group Policy Deployment
+
+#### Security Recommendations
+1. **Use Enterprise or Corporate profiles** for production environments
+2. **Enable compliance mode** appropriate for your industry
+3. **Configure centralized logging** to network shares with appropriate ACLs
+4. **Regular backup verification** using the built-in integrity checks
+5. **Test deployments** using DryRun mode before production rollout
+
+#### Performance Optimization
+1. **Schedule deployments** during maintenance windows
+2. **Use startup scripts** rather than logon scripts for computer settings
+3. **Configure appropriate timeouts** based on your network performance
+4. **Monitor deployment reports** for performance trending
+
+#### Compliance Management
+1. **Document your configuration profile** choice and rationale
+2. **Retain logs** according to your organization's data retention policy
+3. **Regular compliance audits** using the generated reports
+4. **Coordinate with security teams** for compliance validation
 
 ## 🚀 Deployment & Configuration
 

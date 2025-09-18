@@ -1,0 +1,346 @@
+{
+  "GroupPolicyConfiguration": {
+    "Version": "1.0",
+    "Description": "Enterprise Group Policy configuration template for Windows Regional Settings Reset",
+    "LastModified": "2024-09-18",
+    "CompatibilityLevel": "Windows 10/11 Enterprise"
+  },
+  "DeploymentProfiles": {
+    "Enterprise": {
+      "Description": "Full enterprise deployment with all security and compliance features",
+      "Settings": {
+        "Force": true,
+        "BackupEnabled": true,
+        "BackupRetentionDays": 90,
+        "PerformanceMonitoring": true,
+        "AuditLevel": "Detailed",
+        "RetryAttempts": 5,
+        "TimeoutMinutes": 30,
+        "NetworkBackup": true,
+        "EncryptionEnabled": true,
+        "ComplianceReporting": true,
+        "EventLogIntegration": true
+      },
+      "Security": {
+        "RequireAdminRights": true,
+        "AllowUserOverride": false,
+        "ValidateDigitalSignature": true,
+        "EncryptBackups": true,
+        "SecureLogTransmission": true
+      },
+      "Compliance": {
+        "SOXCompliant": true,
+        "HIPAACompliant": true,
+        "ISO27001Compliant": true,
+        "AuditTrailEnabled": true,
+        "DataRetentionMonths": 84
+      }
+    },
+    "Corporate": {
+      "Description": "Standard corporate deployment with essential features",
+      "Settings": {
+        "Force": true,
+        "BackupEnabled": true,
+        "BackupRetentionDays": 30,
+        "PerformanceMonitoring": false,
+        "AuditLevel": "Standard",
+        "RetryAttempts": 3,
+        "TimeoutMinutes": 20,
+        "NetworkBackup": true,
+        "EncryptionEnabled": false,
+        "ComplianceReporting": true,
+        "EventLogIntegration": true
+      },
+      "Security": {
+        "RequireAdminRights": true,
+        "AllowUserOverride": false,
+        "ValidateDigitalSignature": false,
+        "EncryptBackups": false,
+        "SecureLogTransmission": false
+      },
+      "Compliance": {
+        "SOXCompliant": false,
+        "HIPAACompliant": false,
+        "ISO27001Compliant": false,
+        "AuditTrailEnabled": true,
+        "DataRetentionMonths": 36
+      }
+    },
+    "Standard": {
+      "Description": "Basic deployment suitable for workgroups and small organizations",
+      "Settings": {
+        "Force": true,
+        "BackupEnabled": true,
+        "BackupRetentionDays": 14,
+        "PerformanceMonitoring": false,
+        "AuditLevel": "Basic",
+        "RetryAttempts": 2,
+        "TimeoutMinutes": 15,
+        "NetworkBackup": false,
+        "EncryptionEnabled": false,
+        "ComplianceReporting": false,
+        "EventLogIntegration": true
+      },
+      "Security": {
+        "RequireAdminRights": true,
+        "AllowUserOverride": true,
+        "ValidateDigitalSignature": false,
+        "EncryptBackups": false,
+        "SecureLogTransmission": false
+      },
+      "Compliance": {
+        "SOXCompliant": false,
+        "HIPAACompliant": false,
+        "ISO27001Compliant": false,
+        "AuditTrailEnabled": false,
+        "DataRetentionMonths": 12
+      }
+    },
+    "Minimal": {
+      "Description": "Lightweight deployment with minimal features for testing or resource-constrained environments",
+      "Settings": {
+        "Force": true,
+        "BackupEnabled": false,
+        "BackupRetentionDays": 0,
+        "PerformanceMonitoring": false,
+        "AuditLevel": "None",
+        "RetryAttempts": 1,
+        "TimeoutMinutes": 10,
+        "NetworkBackup": false,
+        "EncryptionEnabled": false,
+        "ComplianceReporting": false,
+        "EventLogIntegration": false
+      },
+      "Security": {
+        "RequireAdminRights": true,
+        "AllowUserOverride": true,
+        "ValidateDigitalSignature": false,
+        "EncryptBackups": false,
+        "SecureLogTransmission": false
+      },
+      "Compliance": {
+        "SOXCompliant": false,
+        "HIPAACompliant": false,
+        "ISO27001Compliant": false,
+        "AuditTrailEnabled": false,
+        "DataRetentionMonths": 1
+      }
+    }
+  },
+  "ActiveDirectoryIntegration": {
+    "SYSVOL": {
+      "LogPath": "\\\\{DOMAIN}\\SYSVOL\\{DOMAIN}\\scripts\\RegionalSettings\\Logs",
+      "BackupPath": "\\\\{DOMAIN}\\SYSVOL\\{DOMAIN}\\scripts\\RegionalSettings\\Backups",
+      "ConfigPath": "\\\\{DOMAIN}\\SYSVOL\\{DOMAIN}\\scripts\\RegionalSettings\\Config"
+    },
+    "GroupPolicyObjects": {
+      "ComputerConfiguration": {
+        "Enabled": true,
+        "ApplyOnStartup": true,
+        "ApplyOnLogon": false,
+        "RunAsynchronously": false,
+        "ProcessEvenIfNoGroupPolicyChanges": true
+      },
+      "UserConfiguration": {
+        "Enabled": true,
+        "ApplyOnStartup": false,
+        "ApplyOnLogon": true,
+        "RunAsynchronously": false,
+        "ProcessEvenIfNoGroupPolicyChanges": false
+      }
+    },
+    "SCCMIntegration": {
+      "PackageName": "Regional Settings Reset",
+      "ProgramName": "Deploy Regional Settings",
+      "CommandLine": "powershell.exe -ExecutionPolicy Bypass -File Deploy-RegionalSettings-GP.ps1 -ConfigurationProfile Enterprise -NetworkLogPath \"\\\\server\\logs\"",
+      "RunMode": "RunWithAdministrativeRights",
+      "LogonRequirement": "WhetherOrNotUserLoggedOn",
+      "MaxRunTime": 30,
+      "EstimatedInstallTime": 5
+    }
+  },
+  "NetworkConfiguration": {
+    "CentralizedLogging": {
+      "Enabled": true,
+      "UNCPath": "\\\\{LOGSERVER}\\RegionalSettingsLogs$\\{COMPUTERNAME}",
+      "RetentionPolicy": "90days",
+      "CompressionEnabled": true,
+      "EncryptionEnabled": true
+    },
+    "BackupStorage": {
+      "Enabled": true,
+      "UNCPath": "\\\\{BACKUPSERVER}\\RegionalSettingsBackups$\\{COMPUTERNAME}",
+      "RetentionPolicy": "365days",
+      "CompressionEnabled": true,
+      "EncryptionEnabled": true,
+      "ReplicationEnabled": true
+    },
+    "ReportingServices": {
+      "Enabled": true,
+      "SQLServerInstance": "{REPORTSERVER}\\SQLEXPRESS",
+      "DatabaseName": "RegionalSettingsReporting",
+      "ReportingFrequency": "Daily",
+      "DashboardURL": "http://{REPORTSERVER}/Reports/RegionalSettings"
+    }
+  },
+  "LocaleConfiguration": {
+    "SupportedLocales": {
+      "pl-PL": {
+        "DisplayName": "Polish (Poland)",
+        "EnterpriseApproved": true,
+        "ComplianceLevel": "Full",
+        "DeploymentPriority": 1
+      },
+      "en-US": {
+        "DisplayName": "English (United States)",
+        "EnterpriseApproved": true,
+        "ComplianceLevel": "Full",
+        "DeploymentPriority": 2
+      },
+      "en-GB": {
+        "DisplayName": "English (United Kingdom)",
+        "EnterpriseApproved": true,
+        "ComplianceLevel": "Full",
+        "DeploymentPriority": 3
+      },
+      "de-DE": {
+        "DisplayName": "German (Germany)",
+        "EnterpriseApproved": true,
+        "ComplianceLevel": "Full",
+        "DeploymentPriority": 4
+      },
+      "fr-FR": {
+        "DisplayName": "French (France)",
+        "EnterpriseApproved": true,
+        "ComplianceLevel": "Standard",
+        "DeploymentPriority": 5
+      },
+      "es-ES": {
+        "DisplayName": "Spanish (Spain)",
+        "EnterpriseApproved": true,
+        "ComplianceLevel": "Standard",
+        "DeploymentPriority": 6
+      },
+      "it-IT": {
+        "DisplayName": "Italian (Italy)",
+        "EnterpriseApproved": false,
+        "ComplianceLevel": "Basic",
+        "DeploymentPriority": 7
+      },
+      "pt-PT": {
+        "DisplayName": "Portuguese (Portugal)",
+        "EnterpriseApproved": false,
+        "ComplianceLevel": "Basic",
+        "DeploymentPriority": 8
+      },
+      "ru-RU": {
+        "DisplayName": "Russian (Russia)",
+        "EnterpriseApproved": false,
+        "ComplianceLevel": "None",
+        "DeploymentPriority": 9
+      },
+      "zh-CN": {
+        "DisplayName": "Chinese (Simplified, China)",
+        "EnterpriseApproved": false,
+        "ComplianceLevel": "None",
+        "DeploymentPriority": 10
+      },
+      "ja-JP": {
+        "DisplayName": "Japanese (Japan)",
+        "EnterpriseApproved": false,
+        "ComplianceLevel": "None",
+        "DeploymentPriority": 11
+      },
+      "ko-KR": {
+        "DisplayName": "Korean (Korea)",
+        "EnterpriseApproved": false,
+        "ComplianceLevel": "None",
+        "DeploymentPriority": 12
+      }
+    },
+    "RegionalDefaults": {
+      "NorthAmerica": "en-US",
+      "Europe": "en-GB",
+      "Germany": "de-DE",
+      "Poland": "pl-PL",
+      "France": "fr-FR",
+      "Spain": "es-ES"
+    }
+  },
+  "SchedulingConfiguration": {
+    "DeploymentWindows": {
+      "MaintenanceWindow": {
+        "Enabled": true,
+        "StartTime": "02:00",
+        "EndTime": "06:00",
+        "DaysOfWeek": ["Sunday", "Saturday"],
+        "ExcludeHolidays": true
+      },
+      "BusinessHours": {
+        "Enabled": false,
+        "StartTime": "08:00",
+        "EndTime": "18:00",
+        "DaysOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+        "AllowEmergencyDeployment": true
+      }
+    },
+    "RecurringDeployment": {
+      "Enabled": false,
+      "Frequency": "Monthly",
+      "DayOfMonth": 15,
+      "SkipIfRecentDeployment": true,
+      "RecentDeploymentThresholdDays": 30
+    }
+  },
+  "MonitoringAndAlerting": {
+    "PerformanceCounters": {
+      "Enabled": true,
+      "CollectionInterval": 5,
+      "RetentionDays": 30,
+      "Counters": [
+        "\\Processor(_Total)\\% Processor Time",
+        "\\Memory\\Available MBytes",
+        "\\LogicalDisk(C:)\\% Free Space"
+      ]
+    },
+    "EventLogMonitoring": {
+      "Enabled": true,
+      "Sources": ["RegionalSettings-GP"],
+      "Severities": ["Error", "Warning"],
+      "AlertThreshold": 5,
+      "AlertTimeWindow": 60
+    },
+    "EmailNotifications": {
+      "Enabled": true,
+      "SMTPServer": "{SMTPSERVER}",
+      "From": "RegionalSettings@{DOMAIN}",
+      "Recipients": ["itadmin@{DOMAIN}", "security@{DOMAIN}"],
+      "OnSuccess": false,
+      "OnFailure": true,
+      "OnWarning": true
+    }
+  },
+  "TroubleshootingAndSupport": {
+    "DiagnosticCollection": {
+      "Enabled": true,
+      "IncludeSystemInfo": true,
+      "IncludeRegistrySnapshot": true,
+      "IncludeEventLogs": true,
+      "RetentionDays": 30
+    },
+    "RemoteSupport": {
+      "Enabled": false,
+      "AllowRemoteExecution": false,
+      "RequireApproval": true,
+      "SessionTimeout": 60,
+      "LogAllActivities": true
+    },
+    "HelpDeskIntegration": {
+      "Enabled": true,
+      "TicketingSystem": "ServiceNow",
+      "AutoCreateTickets": true,
+      "TicketCategory": "Desktop Support",
+      "TicketPriority": "Medium"
+    }
+  }
+}
