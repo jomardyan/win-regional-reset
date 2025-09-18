@@ -93,6 +93,13 @@ jobs:
           $totalFiles++
           Write-Host "Checking: $script" -ForegroundColor Yellow
           try {
+            # Validate script path is not null or empty
+            if (-not $script -or [string]::IsNullOrWhiteSpace($script)) {
+              Write-Host "❌ Invalid script path (null or empty)" -ForegroundColor Red
+              $allValid = $false
+              continue
+            }
+            
             if (Test-Path $script) {
               $parseErrors = $null
               $tokens = [System.Management.Automation.PSParser]::Tokenize((Get-Content $script -Raw), [ref]$parseErrors)
@@ -108,13 +115,25 @@ jobs:
               }
             } else {
               Write-Host "❌ $script - File not found" -ForegroundColor Red
-              Write-Host "Directory contents for $(Split-Path $script):" -ForegroundColor Yellow
-              $dir = Split-Path $script
-              if (Test-Path $dir) {
-                Get-ChildItem $dir | ForEach-Object { Write-Host "  $($_.Name)" }
-              } else {
-                Write-Host "  Directory does not exist" -ForegroundColor Red
+              
+              # Safely get directory path
+              try {
+                $dir = Split-Path $script -ErrorAction Stop
+                if ($dir) {
+                  Write-Host "Directory contents for $dir:" -ForegroundColor Yellow
+                  if (Test-Path $dir) {
+                    Get-ChildItem $dir | ForEach-Object { Write-Host "  $($_.Name)" }
+                  } else {
+                    Write-Host "  Directory does not exist" -ForegroundColor Red
+                  }
+                } else {
+                  Write-Host "  Could not determine parent directory" -ForegroundColor Red
+                }
               }
+              catch {
+                Write-Host "  Error getting directory path: $($_.Exception.Message)" -ForegroundColor Red
+              }
+              
               $allValid = $false
             }
           }
@@ -129,6 +148,13 @@ jobs:
           $totalFiles++
           Write-Host "Checking: $module" -ForegroundColor Yellow
           try {
+            # Validate module path is not null or empty
+            if (-not $module -or [string]::IsNullOrWhiteSpace($module)) {
+              Write-Host "❌ Invalid module path (null or empty)" -ForegroundColor Red
+              $allValid = $false
+              continue
+            }
+            
             if (Test-Path $module) {
               $parseErrors = $null
               $tokens = [System.Management.Automation.PSParser]::Tokenize((Get-Content $module -Raw), [ref]$parseErrors)
@@ -144,13 +170,25 @@ jobs:
               }
             } else {
               Write-Host "❌ $module - File not found" -ForegroundColor Red
-              Write-Host "Directory contents for $(Split-Path $module):" -ForegroundColor Yellow
-              $dir = Split-Path $module
-              if (Test-Path $dir) {
-                Get-ChildItem $dir | ForEach-Object { Write-Host "  $($_.Name)" }
-              } else {
-                Write-Host "  Directory does not exist" -ForegroundColor Red
+              
+              # Safely get directory path
+              try {
+                $dir = Split-Path $module -ErrorAction Stop
+                if ($dir) {
+                  Write-Host "Directory contents for $dir:" -ForegroundColor Yellow
+                  if (Test-Path $dir) {
+                    Get-ChildItem $dir | ForEach-Object { Write-Host "  $($_.Name)" }
+                  } else {
+                    Write-Host "  Directory does not exist" -ForegroundColor Red
+                  }
+                } else {
+                  Write-Host "  Could not determine parent directory" -ForegroundColor Red
+                }
               }
+              catch {
+                Write-Host "  Error getting directory path: $($_.Exception.Message)" -ForegroundColor Red
+              }
+              
               $allValid = $false
             }
           }
