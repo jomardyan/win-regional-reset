@@ -75,15 +75,15 @@ jobs:
           Write-Host "Checking: $script" -ForegroundColor Yellow
           try {
             if (Test-Path $script) {
-              $errors = $null
-              $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $script -Raw), [ref]$errors)
-              if ($errors.Count -eq 0) {
+              $parseErrors = $null
+              $tokens = [System.Management.Automation.PSParser]::Tokenize((Get-Content $script -Raw), [ref]$parseErrors)
+              if ($parseErrors.Count -eq 0) {
                 Write-Host "✅ $script - Syntax OK" -ForegroundColor Green
                 $validFiles++
               } else {
                 Write-Host "❌ $script - Parse Errors Found:" -ForegroundColor Red
-                foreach ($error in $errors) {
-                  Write-Host "  $error" -ForegroundColor Red
+                foreach ($parseError in $parseErrors) {
+                  Write-Host "  $parseError" -ForegroundColor Red
                 }
                 $allValid = $false
               }
@@ -104,15 +104,15 @@ jobs:
           Write-Host "Checking: $module" -ForegroundColor Yellow
           try {
             if (Test-Path $module) {
-              $errors = $null
-              $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $module -Raw), [ref]$errors)
-              if ($errors.Count -eq 0) {
+              $parseErrors = $null
+              $tokens = [System.Management.Automation.PSParser]::Tokenize((Get-Content $module -Raw), [ref]$parseErrors)
+              if ($parseErrors.Count -eq 0) {
                 Write-Host "✅ $module - Syntax OK" -ForegroundColor Green
                 $validFiles++
               } else {
                 Write-Host "❌ $module - Parse Errors Found:" -ForegroundColor Red
-                foreach ($error in $errors) {
-                  Write-Host "  $error" -ForegroundColor Red
+                foreach ($parseError in $parseErrors) {
+                  Write-Host "  $parseError" -ForegroundColor Red
                 }
                 $allValid = $false
               }
@@ -137,6 +137,7 @@ jobs:
           Write-Host "Success Rate: $successRate%" -ForegroundColor White
         } else {
           Write-Host "Success Rate: N/A (No files found)" -ForegroundColor Yellow
+          $allValid = $false
         }
         
         if (-not $allValid) {
