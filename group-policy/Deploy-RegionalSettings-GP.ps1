@@ -90,7 +90,7 @@ param(
 $script:ScriptVersion = "1.0"
 $script:StartTime = Get-Date
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$script:MainScript = Join-Path $script:ScriptPath "Reset-RegionalSettings.ps1"
+$script:MainScript = Join-Path (Split-Path $script:ScriptPath -Parent) "scripts\Reset-RegionalSettings.ps1"
 $script:EventSource = "RegionalSettings-GP"
 $script:DeploymentId = [System.Guid]::NewGuid().ToString("N")[0..7] -join ""
 
@@ -207,7 +207,7 @@ function Test-DomainEnvironment {
 
 # Function to get configuration profile settings
 function Get-ConfigurationProfile {
-    param([string]$Profile)
+    param([string]$ProfileName)
     
     $profiles = @{
         "Enterprise" = @{
@@ -252,7 +252,7 @@ function Get-ConfigurationProfile {
         }
     }
     
-    return $profiles[$Profile]
+    return $profiles[$ProfileName]
 }
 
 # Function to validate deployment prerequisites
@@ -322,7 +322,7 @@ function Test-DeploymentPrerequisites {
 
 # Function to create deployment configuration
 function New-DeploymentConfiguration {
-    $config = Get-ConfigurationProfile -Profile $ConfigurationProfile
+    $config = Get-ConfigurationProfile -ProfileName $ConfigurationProfile
     
     # Create temporary configuration file
     $configPath = "$env:TEMP\RegionalSettings-GP-Config_$($script:DeploymentId).json"

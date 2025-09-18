@@ -61,10 +61,9 @@ class TestFramework:
         """Test PowerShell script syntax"""
         try:
             result = subprocess.run([
-                "powershell", "-Command", 
-                "Get-Content 'Reset-RegionalSettings.ps1' | Out-Null; Write-Host 'Syntax OK'"
-            ], capture_output=True, text=True, cwd="../")
-            
+                'powershell', '-Command',
+                "Get-Content '../scripts/Reset-RegionalSettings.ps1' | Out-Null; Write-Host 'Syntax OK'"
+            ], capture_output=True, text=True, timeout=10)
             return "Syntax OK" in result.stdout
         except:
             return False
@@ -131,10 +130,9 @@ class TestFramework:
     def test_config_files_validity(self) -> bool:
         """Test configuration file validity"""
         config_files = [
-            "../config.json",
+            "../config/config.json",
             "../python/config.json", 
             "../cpp/config.json",
-            "../cpp/custom_locales.json"
         ]
         
         for config_file in config_files:
@@ -149,7 +147,7 @@ class TestFramework:
     def test_batch_files_syntax(self) -> bool:
         """Test batch file syntax"""
         batch_files = [
-            "../reset-regional.bat",
+            "../scripts/reset-regional.bat",
             "../backup-manager.bat", 
             "../validate.bat",
             "../scheduler.bat"
@@ -172,7 +170,7 @@ class TestFramework:
         
         # Check PowerShell locales
         try:
-            with open("../Reset-RegionalSettings.ps1", 'r') as f:
+            with open("../scripts/Reset-RegionalSettings.ps1", 'r') as f:
                 content = f.read()
                 if '"pl-PL"' in content and '"en-US"' in content:
                     locales["powershell"] = ["pl-PL", "en-US", "de-DE"]

@@ -96,8 +96,8 @@ if not exist "%PS_SCRIPT%" (
     echo.
     echo Please ensure the following files are present:
     echo - Deploy-RegionalSettings-GP.ps1
-    echo - Reset-RegionalSettings.ps1
-    echo - config-gp-template.json
+    echo - ../scripts/Reset-RegionalSettings.ps1
+    echo - ../config/config-gp-template.json
     echo.
     exit /b 1
 )

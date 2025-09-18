@@ -1,0 +1,77 @@
+{
+  "timestamp": "2025-09-18 15:22:27",
+  "summary": {
+    "total_tests": 11,
+    "passed": 4,
+    "failed": 7,
+    "success_rate": 36.36363636363637
+  },
+  "results": [
+    {
+      "name": "PowerShell Syntax Check",
+      "passed": false,
+      "message": "Test failed",
+      "execution_time": 0.0012547969818115234
+    },
+    {
+      "name": "PowerShell Execution Policy",
+      "passed": false,
+      "message": "Test failed",
+      "execution_time": 0.0006709098815917969
+    },
+    {
+      "name": "Python Import Test",
+      "passed": true,
+      "message": "Test passed",
+      "execution_time": 0.07164311408996582
+    },
+    {
+      "name": "Python Demo Mode",
+      "passed": false,
+      "message": "Test failed",
+      "execution_time": 0.06466412544250488
+    },
+    {
+      "name": "C++ Compilation",
+      "passed": false,
+      "message": "Test failed",
+      "execution_time": 1.8551075458526611
+    },
+    {
+      "name": "C++ Demo Execution",
+      "passed": false,
+      "message": "Test failed",
+      "execution_time": 0.003190279006958008
+    },
+    {
+      "name": "Configuration File Validity",
+      "passed": true,
+      "message": "Test passed",
+      "execution_time": 0.0002243518829345703
+    },
+    {
+      "name": "Batch File Syntax",
+      "passed": false,
+      "message": "Missing batch file: ../reset-regional.bat",
+      "execution_time": 1.5497207641601562e-05
+    },
+    {
+      "name": "Locale Consistency",
+      "passed": false,
+      "message": "Test failed",
+      "execution_time": 0.0002593994140625
+    },
+    {
+      "name": "Backup Directory Creation",
+      "passed": true,
+      "message": "Test passed",
+      "execution_time": 0.002592802047729492
+    },
+    {
+      "name": "Performance Monitoring",
+      "passed": true,
+      "message": "Test passed",
+      "execution_time": 0.4171464443206787
+    }
+  ]
+}

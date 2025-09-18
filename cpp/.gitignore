@@ -2,3 +2,4 @@ regional_settings_reset
 *.exe
 *.obj
 *.o
+test_locales.sh

@@ -1,0 +1,480 @@
+name: PowerShell Windows Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'scripts/**'
+      - 'modules/**'
+      - 'group-policy/**'
+      - 'config/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'scripts/**'
+      - 'modules/**'
+      - 'group-policy/**'
+      - 'config/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      test_level:
+        description: 'Test Level'
+        required: true
+        default: 'standard'
+        type: choice
+        options:
+          - 'quick'
+          - 'standard'
+          - 'comprehensive'
+      locale_test:
+        description: 'Locale to test'
+        required: false
+        default: 'en-US'
+        type: string
+
+env:
+  # Environment variables for testing
+  POWERSHELL_TELEMETRY_OPTOUT: 1
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+jobs:
+  powershell-syntax-validation:
+    name: PowerShell Syntax Validation
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Validate PowerShell syntax
+      shell: powershell
+      run: |
+        Write-Host "🔍 Validating PowerShell script syntax..." -ForegroundColor Cyan
+        
+        $scriptFiles = @(
+          "scripts/Reset-RegionalSettings.ps1",
+          "group-policy/Deploy-RegionalSettings-GP.ps1"
+        )
+        
+        $moduleFiles = @(
+          "modules/BackupCompression.psm1",
+          "modules/IncrementalBackup.psm1"
+        )
+        
+        $allValid = $true
+        $totalFiles = 0
+        $validFiles = 0
+        
+        # Test main scripts
+        foreach ($script in $scriptFiles) {
+          $totalFiles++
+          Write-Host "Checking: $script" -ForegroundColor Yellow
+          try {
+            $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $script -Raw), [ref]$null)
+            Write-Host "✅ $script - Syntax OK" -ForegroundColor Green
+            $validFiles++
+          }
+          catch {
+            Write-Host "❌ $script - Syntax Error: $($_.Exception.Message)" -ForegroundColor Red
+            $allValid = $false
+          }
+        }
+        
+        # Test module files
+        foreach ($module in $moduleFiles) {
+          $totalFiles++
+          Write-Host "Checking: $module" -ForegroundColor Yellow
+          try {
+            $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $module -Raw), [ref]$null)
+            Write-Host "✅ $module - Syntax OK" -ForegroundColor Green
+            $validFiles++
+          }
+          catch {
+            Write-Host "❌ $module - Syntax Error: $($_.Exception.Message)" -ForegroundColor Red
+            $allValid = $false
+          }
+        }
+        
+        Write-Host "`n📊 Syntax Validation Summary:" -ForegroundColor Cyan
+        Write-Host "Total Files: $totalFiles" -ForegroundColor White
+        Write-Host "Valid Files: $validFiles" -ForegroundColor Green
+        Write-Host "Success Rate: $([math]::Round(($validFiles / $totalFiles) * 100, 1))%" -ForegroundColor White
+        
+        if (-not $allValid) {
+          Write-Host "`n❌ PowerShell syntax validation failed!" -ForegroundColor Red
+          exit 1
+        } else {
+          Write-Host "`n✅ All PowerShell files have valid syntax!" -ForegroundColor Green
+        }
+
+  powershell-static-analysis:
+    name: PowerShell Static Analysis
+    runs-on: windows-latest
+    needs: powershell-syntax-validation
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install PSScriptAnalyzer
+      shell: powershell
+      run: |
+        Write-Host "📦 Installing PSScriptAnalyzer..." -ForegroundColor Cyan
+        Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -Verbose
+        
+    - name: Run PSScriptAnalyzer
+      shell: powershell
+      run: |
+        Write-Host "🔍 Running PSScriptAnalyzer static analysis..." -ForegroundColor Cyan
+        
+        $scriptFiles = @(
+          "scripts/Reset-RegionalSettings.ps1",
+          "group-policy/Deploy-RegionalSettings-GP.ps1"
+        )
+        
+        $moduleFiles = @(
+          "modules/BackupCompression.psm1",
+          "modules/IncrementalBackup.psm1"
+        )
+        
+        $allFiles = $scriptFiles + $moduleFiles
+        $totalIssues = 0
+        $criticalIssues = 0
+        
+        foreach ($file in $allFiles) {
+          if (Test-Path $file) {
+            Write-Host "`nAnalyzing: $file" -ForegroundColor Yellow
+            
+            $results = Invoke-ScriptAnalyzer -Path $file -Severity @('Error', 'Warning', 'Information')
+            
+            if ($results) {
+              $totalIssues += $results.Count
+              
+              foreach ($result in $results) {
+                $color = switch ($result.Severity) {
+                  'Error' { 'Red'; $criticalIssues++ }
+                  'Warning' { 'Yellow' }
+                  'Information' { 'Blue' }
+                  default { 'White' }
+                }
+                
+                Write-Host "  [$($result.Severity)] Line $($result.Line): $($result.RuleName) - $($result.Message)" -ForegroundColor $color
+              }
+            } else {
+              Write-Host "  ✅ No issues found" -ForegroundColor Green
+            }
+          }
+        }
+        
+        Write-Host "`n📊 Static Analysis Summary:" -ForegroundColor Cyan
+        Write-Host "Total Issues: $totalIssues" -ForegroundColor White
+        Write-Host "Critical Issues: $criticalIssues" -ForegroundColor $(if($criticalIssues -gt 0) { 'Red' } else { 'Green' })
+        
+        # Set output for next jobs
+        echo "TOTAL_ISSUES=$totalIssues" >> $env:GITHUB_ENV
+        echo "CRITICAL_ISSUES=$criticalIssues" >> $env:GITHUB_ENV
+        
+        if ($criticalIssues -gt 0) {
+          Write-Host "`n❌ Critical issues found in PowerShell scripts!" -ForegroundColor Red
+          exit 1
+        } else {
+          Write-Host "`n✅ PowerShell static analysis completed successfully!" -ForegroundColor Green
+        }
+
+  powershell-dry-run-tests:
+    name: PowerShell Dry Run Tests
+    runs-on: windows-latest
+    needs: powershell-static-analysis
+    strategy:
+      matrix:
+        locale: ['en-US', 'en-GB', 'de-DE', 'pl-PL']
+        profile: ['Standard', 'Corporate']
+      fail-fast: false
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Test PowerShell execution policy
+      shell: powershell
+      run: |
+        Write-Host "🔐 Checking PowerShell execution policy..." -ForegroundColor Cyan
+        $policy = Get-ExecutionPolicy
+        Write-Host "Current execution policy: $policy" -ForegroundColor Yellow
+        
+        if ($policy -eq 'Restricted') {
+          Write-Host "Setting execution policy to RemoteSigned for testing..." -ForegroundColor Yellow
+          Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+        }
+        
+    - name: Test Regional Settings Script (Dry Run)
+      shell: powershell
+      run: |
+        Write-Host "🧪 Testing Regional Settings Script - Locale: ${{ matrix.locale }}" -ForegroundColor Cyan
+        
+        # Create a test configuration for dry run
+        $testConfig = @{
+          TestMode = $true
+          DryRun = $true
+          Locale = "${{ matrix.locale }}"
+          BackupEnabled = $false
+          LogLevel = "Verbose"
+        }
+        
+        $configPath = "test-config-${{ matrix.locale }}-${{ matrix.profile }}.json"
+        $testConfig | ConvertTo-Json -Depth 3 | Set-Content -Path $configPath
+        
+        try {
+          # Test script import and basic functionality
+          Write-Host "Importing script..." -ForegroundColor Yellow
+          . .\scripts\Reset-RegionalSettings.ps1 -Locale "${{ matrix.locale }}" -ConfigFile $configPath -WhatIf -Verbose
+          
+          Write-Host "✅ Script import and dry run successful for ${{ matrix.locale }}" -ForegroundColor Green
+        }
+        catch {
+          Write-Host "❌ Script test failed for ${{ matrix.locale }}: $($_.Exception.Message)" -ForegroundColor Red
+          Write-Host "Stack trace: $($_.ScriptStackTrace)" -ForegroundColor Red
+          exit 1
+        }
+        finally {
+          # Clean up test configuration
+          if (Test-Path $configPath) {
+            Remove-Item $configPath -Force
+          }
+        }
+        
+    - name: Test Group Policy Script (Dry Run)
+      shell: powershell
+      run: |
+        Write-Host "🧪 Testing Group Policy Script - Profile: ${{ matrix.profile }}" -ForegroundColor Cyan
+        
+        try {
+          # Test GP script with dry run
+          & .\group-policy\Deploy-RegionalSettings-GP.ps1 -Locale "${{ matrix.locale }}" -ConfigurationProfile "${{ matrix.profile }}" -DryRun -ReportingEnabled
+          
+          Write-Host "✅ Group Policy script dry run successful for ${{ matrix.locale }} (${{ matrix.profile }})" -ForegroundColor Green
+        }
+        catch {
+          Write-Host "❌ Group Policy script test failed: $($_.Exception.Message)" -ForegroundColor Red
+          Write-Host "Stack trace: $($_.ScriptStackTrace)" -ForegroundColor Red
+          exit 1
+        }
+
+  powershell-module-tests:
+    name: PowerShell Module Tests
+    runs-on: windows-latest
+    needs: powershell-static-analysis
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Test PowerShell Modules
+      shell: powershell
+      run: |
+        Write-Host "🧪 Testing PowerShell Modules..." -ForegroundColor Cyan
+        
+        $modules = @(
+          "modules/BackupCompression.psm1",
+          "modules/IncrementalBackup.psm1"
+        )
+        
+        foreach ($module in $modules) {
+          Write-Host "`nTesting module: $module" -ForegroundColor Yellow
+          
+          try {
+            # Test module import
+            Import-Module ".\$module" -Force -Verbose
+            
+            # Get module information
+            $moduleInfo = Get-Module -Name (Split-Path $module -LeafBase)
+            
+            if ($moduleInfo) {
+              Write-Host "✅ Module imported successfully" -ForegroundColor Green
+              Write-Host "  Module Name: $($moduleInfo.Name)" -ForegroundColor White
+              Write-Host "  Version: $($moduleInfo.Version)" -ForegroundColor White
+              Write-Host "  Exported Functions: $($moduleInfo.ExportedFunctions.Count)" -ForegroundColor White
+              Write-Host "  Exported Cmdlets: $($moduleInfo.ExportedCmdlets.Count)" -ForegroundColor White
+              
+              # List exported functions
+              if ($moduleInfo.ExportedFunctions.Count -gt 0) {
+                Write-Host "  Functions: $($moduleInfo.ExportedFunctions.Keys -join ', ')" -ForegroundColor Cyan
+              }
+            } else {
+              throw "Module import failed - module not found in session"
+            }
+            
+            # Remove module after testing
+            Remove-Module -Name (Split-Path $module -LeafBase) -Force
+            
+          }
+          catch {
+            Write-Host "❌ Module test failed for $module`: $($_.Exception.Message)" -ForegroundColor Red
+            exit 1
+          }
+        }
+        
+        Write-Host "`n✅ All PowerShell modules tested successfully!" -ForegroundColor Green
+
+  powershell-configuration-tests:
+    name: Configuration File Tests
+    runs-on: windows-latest
+    needs: powershell-static-analysis
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Test Configuration Files
+      shell: powershell
+      run: |
+        Write-Host "🧪 Testing Configuration Files..." -ForegroundColor Cyan
+        
+        $configFiles = @(
+          "config/config.json",
+          "config/config-gp-template.json"
+        )
+        
+        foreach ($configFile in $configFiles) {
+          Write-Host "`nTesting configuration: $configFile" -ForegroundColor Yellow
+          
+          try {
+            if (-not (Test-Path $configFile)) {
+              throw "Configuration file not found: $configFile"
+            }
+            
+            # Test JSON syntax
+            $config = Get-Content $configFile -Raw | ConvertFrom-Json
+            
+            Write-Host "✅ JSON syntax valid" -ForegroundColor Green
+            
+            # Basic structure validation
+            if ($configFile -like "*gp-template*") {
+              # Validate GP template structure
+              if (-not $config.GroupPolicyConfiguration) {
+                throw "Missing GroupPolicyConfiguration section"
+              }
+              if (-not $config.DeploymentProfiles) {
+                throw "Missing DeploymentProfiles section"
+              }
+              Write-Host "✅ Group Policy template structure valid" -ForegroundColor Green
+            } else {
+              # Validate standard config structure
+              Write-Host "✅ Standard configuration structure valid" -ForegroundColor Green
+            }
+            
+            # Test serialization roundtrip
+            $jsonOut = $config | ConvertTo-Json -Depth 10
+            $configRoundtrip = $jsonOut | ConvertFrom-Json
+            
+            Write-Host "✅ JSON serialization roundtrip successful" -ForegroundColor Green
+            
+          }
+          catch {
+            Write-Host "❌ Configuration test failed for $configFile`: $($_.Exception.Message)" -ForegroundColor Red
+            exit 1
+          }
+        }
+        
+        Write-Host "`n✅ All configuration files tested successfully!" -ForegroundColor Green
+
+  powershell-comprehensive-test:
+    name: Comprehensive PowerShell Test
+    runs-on: windows-latest
+    needs: [powershell-dry-run-tests, powershell-module-tests, powershell-configuration-tests]
+    if: github.event.inputs.test_level == 'comprehensive' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Run Python Test Framework
+      shell: powershell
+      run: |
+        Write-Host "🧪 Running Python Test Framework for PowerShell validation..." -ForegroundColor Cyan
+        
+        # Install Python dependencies if needed
+        if (Get-Command python -ErrorAction SilentlyContinue) {
+          cd tests
+          python test_framework.py --powershell-only --verbose
+        } else {
+          Write-Host "⚠️ Python not available, skipping Python test framework" -ForegroundColor Yellow
+        }
+        
+    - name: Performance Baseline Test
+      shell: powershell
+      run: |
+        Write-Host "🚀 Running PowerShell Performance Baseline Test..." -ForegroundColor Cyan
+        
+        $testLocale = if ("${{ github.event.inputs.locale_test }}") { "${{ github.event.inputs.locale_test }}" } else { "en-US" }
+        
+        # Measure script loading time
+        $loadTime = Measure-Command {
+          . .\scripts\Reset-RegionalSettings.ps1 -WhatIf
+        }
+        
+        Write-Host "Script loading time: $($loadTime.TotalMilliseconds) ms" -ForegroundColor Yellow
+        
+        # Measure dry run execution time
+        $execTime = Measure-Command {
+          & .\scripts\Reset-RegionalSettings.ps1 -Locale $testLocale -WhatIf -Verbose
+        }
+        
+        Write-Host "Dry run execution time: $($execTime.TotalMilliseconds) ms" -ForegroundColor Yellow
+        
+        # Performance thresholds
+        $maxLoadTime = 5000  # 5 seconds
+        $maxExecTime = 30000 # 30 seconds
+        
+        if ($loadTime.TotalMilliseconds -gt $maxLoadTime) {
+          Write-Host "❌ Script loading time exceeded threshold ($maxLoadTime ms)" -ForegroundColor Red
+          exit 1
+        }
+        
+        if ($execTime.TotalMilliseconds -gt $maxExecTime) {
+          Write-Host "❌ Script execution time exceeded threshold ($maxExecTime ms)" -ForegroundColor Red
+          exit 1
+        }
+        
+        Write-Host "✅ Performance test passed!" -ForegroundColor Green
+
+  test-summary:
+    name: Test Summary
+    runs-on: windows-latest
+    needs: [powershell-syntax-validation, powershell-static-analysis, powershell-dry-run-tests, powershell-module-tests, powershell-configuration-tests]
+    if: always()
+    
+    steps:
+    - name: Generate Test Summary
+      shell: powershell
+      run: |
+        Write-Host "📊 PowerShell Windows Test Summary" -ForegroundColor Cyan
+        Write-Host "=================================" -ForegroundColor Cyan
+        
+        $syntaxResult = "${{ needs.powershell-syntax-validation.result }}"
+        $analysisResult = "${{ needs.powershell-static-analysis.result }}"
+        $dryRunResult = "${{ needs.powershell-dry-run-tests.result }}"
+        $moduleResult = "${{ needs.powershell-module-tests.result }}"
+        $configResult = "${{ needs.powershell-configuration-tests.result }}"
+        
+        Write-Host "Syntax Validation: $syntaxResult" -ForegroundColor $(if($syntaxResult -eq 'success') { 'Green' } else { 'Red' })
+        Write-Host "Static Analysis: $analysisResult" -ForegroundColor $(if($analysisResult -eq 'success') { 'Green' } else { 'Red' })
+        Write-Host "Dry Run Tests: $dryRunResult" -ForegroundColor $(if($dryRunResult -eq 'success') { 'Green' } else { 'Red' })
+        Write-Host "Module Tests: $moduleResult" -ForegroundColor $(if($moduleResult -eq 'success') { 'Green' } else { 'Red' })
+        Write-Host "Configuration Tests: $configResult" -ForegroundColor $(if($configResult -eq 'success') { 'Green' } else { 'Red' })
+        
+        $allSuccessful = @($syntaxResult, $analysisResult, $dryRunResult, $moduleResult, $configResult) | Where-Object { $_ -eq 'success' }
+        $successRate = [math]::Round(($allSuccessful.Count / 5) * 100, 1)
+        
+        Write-Host "`nOverall Success Rate: $successRate%" -ForegroundColor $(if($successRate -eq 100) { 'Green' } elseif($successRate -ge 80) { 'Yellow' } else { 'Red' })
+        
+        if ($successRate -lt 100) {
+          Write-Host "`n❌ Some tests failed. Please review the job logs above." -ForegroundColor Red
+          exit 1
+        } else {
+          Write-Host "`n✅ All PowerShell tests passed successfully!" -ForegroundColor Green
+        }

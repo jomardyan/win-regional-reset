@@ -2,12 +2,15 @@
 ## Enterprise-Grade Multi-Platform Solution
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![PowerShell Tests](https://github.com/jomardyan/win-reginnal-reset/actions/workflows/powershell-windows-tests.yml/badge.svg)](https://github.com/jomardyan/win-reginnal-reset/actions/workflows/powershell-windows-tests.yml)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.0%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Python](https://img.shields.io/badge/Python-3.7%2B-green.svg)](https://www.python.org/)
 [![C++](https://img.shields.io/badge/C%2B%2B-17-red.svg)](https://isocpp.org/)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://www.microsoft.com/windows/)
 
 A comprehensive, enterprise-grade toolkit for managing regional and locale settings across Windows systems. This solution provides unified functionality across **PowerShell**, **Python**, and **C++** implementations, featuring advanced enterprise capabilities including parallel processing, encryption, automated scheduling, and comprehensive backup management.
+
+> **📁 New Organized Structure**: The toolkit has been reorganized into logical folders (`scripts/`, `group-policy/`, `modules/`, `config/`, `tests/`, `docs/`) for better maintainability and deployment. See [`docs/FOLDER_STRUCTURE.md`](docs/FOLDER_STRUCTURE.md) for details.
 
 ## � Executive Summary
 
@@ -25,19 +28,19 @@ A comprehensive, enterprise-grade toolkit for managing regional and locale setti
 ### Option 1: PowerShell (Recommended for Windows)
 ```powershell
 # Administrator PowerShell required
-.\Reset-RegionalSettings.ps1 -Locale "en-US" -Force
+.\scripts\Reset-RegionalSettings.ps1 -Locale "en-US" -Force
 
 # With enterprise features
-.\Reset-RegionalSettings.ps1 -Locale "pl-PL" -PerformanceMonitoring -BackupEncryption
+.\scripts\Reset-RegionalSettings.ps1 -Locale "pl-PL" -PerformanceMonitoring -BackupEncryption
 ```
 
 ### Option 2: Batch Wrapper (Simplified)
 ```batch
 # Right-click "Run as administrator"
-reset-regional.bat en-US force
+scripts\reset-regional.bat en-US force
 
 # Silent deployment
-reset-regional.bat de-DE silent
+scripts\reset-regional.bat de-DE silent
 ```
 
 ### Option 3: Python (Cross-Platform)
@@ -55,10 +58,10 @@ make && ./regional_settings_reset_v2 --interactive
 ### Option 5: Group Policy (Enterprise AD Deployment)
 ```batch
 # Active Directory Group Policy deployment
-deploy-regional-gp.bat en-US Enterprise compliance=SOX
+group-policy\deploy-regional-gp.bat en-US Enterprise compliance=SOX
 
 # SCCM package deployment
-powershell.exe -ExecutionPolicy Bypass -File Deploy-RegionalSettings-GP.ps1 -ConfigurationProfile Enterprise
+powershell.exe -ExecutionPolicy Bypass -File group-policy\Deploy-RegionalSettings-GP.ps1 -ConfigurationProfile Enterprise
 ```
 
 ## 🏗️ Architecture Overview
@@ -95,20 +98,20 @@ powershell.exe -ExecutionPolicy Bypass -File Deploy-RegionalSettings-GP.ps1 -Con
 
 ### Method 1: Batch Wrapper (Recommended)
 
-**Right-click** `reset-regional.bat` and select **"Run as administrator"**
+**Right-click** `scripts\reset-regional.bat` and select **"Run as administrator"**
 
 ```batch
 # Reset to Polish (default) with confirmation
-reset-regional.bat
+scripts\reset-regional.bat
 
 # Reset to English (US) with force mode
-reset-regional.bat en-US force
+scripts\reset-regional.bat en-US force
 
 # Silent execution for automation
-reset-regional.bat de-DE silent
+scripts\reset-regional.bat de-DE silent
 
 # Use custom configuration file
-reset-regional.bat config=custom.json
+scripts\reset-regional.bat config=config\custom.json
 
 # Custom log file location
 reset-regional.bat en-GB log=C:\Logs\regional.log
@@ -126,22 +129,22 @@ Open PowerShell as Administrator:
 
 ```powershell
 # Reset to Polish (default) with confirmation
-.\Reset-RegionalSettings.ps1
+.\scripts\Reset-RegionalSettings.ps1
 
 # Reset to English (US) with confirmation
-.\Reset-RegionalSettings.ps1 -Locale "en-US"
+.\scripts\Reset-RegionalSettings.ps1 -Locale "en-US"
 
 # Reset to German without confirmation
-.\Reset-RegionalSettings.ps1 -Locale "de-DE" -Force
+.\scripts\Reset-RegionalSettings.ps1 -Locale "de-DE" -Force
 
 # Use custom configuration
-.\Reset-RegionalSettings.ps1 -ConfigFile "config.json"
+.\scripts\Reset-RegionalSettings.ps1 -ConfigFile "config\config.json"
 
 # Custom log location
-.\Reset-RegionalSettings.ps1 -LogPath "C:\Logs\regional.log"
+.\scripts\Reset-RegionalSettings.ps1 -LogPath "C:\Logs\regional.log"
 
 # Restore from backup
-.\Reset-RegionalSettings.ps1 -RestoreFromBackup "C:\Temp\RegionalSettings_Backup_20231201_143022"
+.\scripts\Reset-RegionalSettings.ps1 -RestoreFromBackup "C:\Temp\RegionalSettings_Backup_20231201_143022"
 ```
 
 ### Method 3: Python Edition (Interactive)
@@ -361,7 +364,7 @@ Enterprise customers can define custom regional settings through JSON configurat
 
 ```powershell
 # Create encrypted backup
-Import-Module .\BackupCompression.psm1
+Import-Module .\modules\BackupCompression.psm1
 New-EncryptedBackup -SourcePath $BackupPath -Password (Read-Host -AsSecureString "Enter Password")
 ```
 
@@ -419,9 +422,35 @@ New-IncrementalBackup -BaseName "Production" -RetentionDays 90 -Compress -Encryp
 
 ### Quality Assurance & Testing
 
-#### Comprehensive Testing Framework
+#### Automated GitHub Actions Testing
+The toolkit includes comprehensive automated testing through GitHub Actions workflows:
+
+**🔄 Continuous Integration**
+- **PowerShell Windows Tests**: Automated syntax validation, static analysis, and dry-run testing on Windows environments
+- **Cross-Platform Tests**: Weekly compatibility testing across multiple Windows versions and PowerShell editions
+- **Module Testing**: Automated PowerShell module loading and functionality validation
+- **Configuration Testing**: JSON configuration file validation and structure testing
+
+**🧪 Test Coverage**
+```yaml
+# Automated test triggers
+on:
+  push: [main, develop]          # Every commit
+  pull_request: [main, develop] # Every PR
+  schedule: '0 2 * * 0'         # Weekly comprehensive tests
+  workflow_dispatch             # Manual testing with custom parameters
+```
+
+**📊 Test Matrix**
+- **Windows Versions**: Windows Latest, 2019, 2022
+- **PowerShell Versions**: 5.1 (Windows PowerShell), 7.x (PowerShell Core)
+- **Locales Tested**: en-US, en-GB, de-DE, pl-PL
+- **Configuration Profiles**: Enterprise, Corporate, Standard, Minimal
+
+#### Local Testing Framework
 ```python
 # Run enterprise test suite
+cd tests
 python test_framework.py --enterprise --coverage --performance
 
 # Test Results:
@@ -437,6 +466,7 @@ python test_framework.py --enterprise --coverage --performance
 - **Performance SLA**: Sub-10 second execution for standard operations
 - **Reliability Target**: 99.9% success rate in enterprise environments
 - **Security Validation**: Penetration testing and vulnerability assessments
+- **Automated Testing**: 100% CI/CD coverage with GitHub Actions
 
 ### **📊 Enhanced Progress Tracking**
 - **Real-time progress bars** - Visual feedback for long operations
@@ -457,9 +487,9 @@ The toolkit includes enterprise-grade Group Policy deployment capabilities for A
 ### Group Policy Deployment Overview
 
 #### New Files Added
-- **`Deploy-RegionalSettings-GP.ps1`** - Main Group Policy deployment script
-- **`deploy-regional-gp.bat`** - GP-compatible batch wrapper
-- **`config-gp-template.json`** - Enterprise configuration template
+- **`group-policy/Deploy-RegionalSettings-GP.ps1`** - Main Group Policy deployment script
+- **`group-policy/deploy-regional-gp.bat`** - GP-compatible batch wrapper
+- **`config/config-gp-template.json`** - Enterprise configuration template
 
 #### Key Features
 - ✅ **Active Directory Integration** - Domain environment detection and SYSVOL logging
@@ -475,26 +505,26 @@ The toolkit includes enterprise-grade Group Policy deployment capabilities for A
 #### Method 1: Group Policy Startup Script (Recommended)
 ```batch
 # Add to Computer Configuration > Policies > Windows Settings > Scripts > Startup
-deploy-regional-gp.bat en-US Enterprise compliance=SOX networklog=\\domain.com\sysvol\logs
+group-policy\deploy-regional-gp.bat en-US Enterprise compliance=SOX networklog=\\domain.com\sysvol\logs
 ```
 
 #### Method 2: Group Policy Logon Script
 ```batch
 # Add to User Configuration > Policies > Windows Settings > Scripts > Logon
-deploy-regional-gp.bat en-US Corporate target=User reporting
+group-policy\deploy-regional-gp.bat en-US Corporate target=User reporting
 ```
 
 #### Method 3: SCCM Package Deployment
 ```powershell
 # SCCM Package Command Line
-powershell.exe -ExecutionPolicy Bypass -File Deploy-RegionalSettings-GP.ps1 -ConfigurationProfile Enterprise -NetworkLogPath "\\server\logs"
+powershell.exe -ExecutionPolicy Bypass -File group-policy\Deploy-RegionalSettings-GP.ps1 -ConfigurationProfile Enterprise -NetworkLogPath "\\server\logs"
 ```
 
 ### Configuration Profiles
 
 #### Enterprise Profile (Recommended for Large Organizations)
 ```batch
-deploy-regional-gp.bat en-US Enterprise compliance=SOX
+group-policy\deploy-regional-gp.bat en-US Enterprise compliance=SOX
 ```
 - ✅ Full backup with encryption
 - ✅ Performance monitoring
@@ -506,7 +536,7 @@ deploy-regional-gp.bat en-US Enterprise compliance=SOX
 
 #### Corporate Profile (Standard Business Deployment)
 ```batch
-deploy-regional-gp.bat en-US Corporate compliance=Standard
+group-policy\deploy-regional-gp.bat en-US Corporate compliance=Standard
 ```
 - ✅ Standard backup (30-day retention)
 - ✅ Basic audit logging
@@ -517,7 +547,7 @@ deploy-regional-gp.bat en-US Corporate compliance=Standard
 
 #### Standard Profile (Small Business/Workgroup)
 ```batch
-deploy-regional-gp.bat en-US Standard
+group-policy\deploy-regional-gp.bat en-US Standard
 ```
 - ✅ Basic backup (14-day retention)
 - ✅ Minimal audit logging
@@ -527,7 +557,7 @@ deploy-regional-gp.bat en-US Standard
 
 #### Minimal Profile (Testing/Resource-Constrained)
 ```batch
-deploy-regional-gp.bat en-US Minimal dryrun
+group-policy\deploy-regional-gp.bat en-US Minimal dryrun
 ```
 - ❌ No backups
 - ❌ No audit logging
@@ -545,10 +575,10 @@ New-Item "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\Logs" -ItemTyp
 New-Item "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\Backups" -ItemType Directory -Force
 
 # Copy deployment files to SYSVOL
-Copy-Item "Deploy-RegionalSettings-GP.ps1" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
-Copy-Item "Reset-RegionalSettings.ps1" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
-Copy-Item "deploy-regional-gp.bat" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
-Copy-Item "config-gp-template.json" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
+Copy-Item "group-policy\Deploy-RegionalSettings-GP.ps1" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
+Copy-Item "scripts\Reset-RegionalSettings.ps1" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
+Copy-Item "group-policy\deploy-regional-gp.bat" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
+Copy-Item "config\config-gp-template.json" "\\domain.com\SYSVOL\domain.com\scripts\RegionalSettings\"
 ```
 
 #### Step 2: Create Group Policy Object
@@ -557,7 +587,7 @@ Copy-Item "config-gp-template.json" "\\domain.com\SYSVOL\domain.com\scripts\Regi
 New-GPO -Name "Corporate Regional Settings" -Domain "domain.com"
 
 # Configure startup script
-Set-GPStartupScript -Name "Corporate Regional Settings" -ScriptName "deploy-regional-gp.bat" -Parameters "en-US Enterprise compliance=SOX networklog=\\domain.com\sysvol\logs"
+Set-GPStartupScript -Name "Corporate Regional Settings" -ScriptName "group-policy\deploy-regional-gp.bat" -Parameters "en-US Enterprise compliance=SOX networklog=\\domain.com\sysvol\logs"
 
 # Link GPO to appropriate OU
 New-GPLink -Name "Corporate Regional Settings" -Target "OU=Workstations,DC=domain,DC=com" -LinkEnabled Yes
@@ -568,7 +598,7 @@ New-GPLink -Name "Corporate Regional Settings" -Target "OU=Workstations,DC=domai
 # SCCM Package Configuration
 Package Name: "Regional Settings Reset - Enterprise"
 Source Directory: "\\server\software\RegionalSettings"
-Command Line: "deploy-regional-gp.bat en-US Enterprise compliance=SOX reporting"
+Command Line: "group-policy\deploy-regional-gp.bat en-US Enterprise compliance=SOX reporting"
 Program Properties:
   - Run with administrative rights: Yes
   - Whether or not user is logged on: Yes
@@ -581,19 +611,19 @@ Program Properties:
 #### SOX Compliance Deployment
 ```batch
 # Sarbanes-Oxley compliant deployment with full audit trail
-deploy-regional-gp.bat en-US Enterprise compliance=SOX networklog=\\audit-server\sox-logs reporting
+group-policy\deploy-regional-gp.bat en-US Enterprise compliance=SOX networklog=\\audit-server\sox-logs reporting
 ```
 
 #### HIPAA Compliance Deployment
 ```batch
 # Healthcare environments with encryption and audit requirements
-deploy-regional-gp.bat en-US Enterprise compliance=HIPAA networklog=\\secure-server\hipaa-logs reporting
+group-policy\deploy-regional-gp.bat en-US Enterprise compliance=HIPAA networklog=\\secure-server\hipaa-logs reporting
 ```
 
 #### ISO27001 Compliance Deployment
 ```batch
 # Information security management standards compliance
-deploy-regional-gp.bat en-US Enterprise compliance=ISO27001 networklog=\\compliance-server\iso-logs reporting
+group-policy\deploy-regional-gp.bat en-US Enterprise compliance=ISO27001 networklog=\\compliance-server\iso-logs reporting
 ```
 
 ### Monitoring and Reporting
@@ -655,7 +685,7 @@ icacls "\\domain.com\SYSVOL\logs" /grant "Domain Computers:(OI)(CI)M"
 #### Validation Commands
 ```batch
 # Test Group Policy deployment manually
-deploy-regional-gp.bat en-US Enterprise dryrun reporting
+group-policy\deploy-regional-gp.bat en-US Enterprise dryrun reporting
 
 # Check Group Policy application
 gpresult /h gp-report.html
@@ -1004,7 +1034,7 @@ scheduler.bat create-backup DAILY 14:30
 scheduler.bat create-maintenance WEEKLY 02:00
 
 # Compressed encrypted backup
-Import-Module .\BackupCompression.psm1
+Import-Module .\modules\BackupCompression.psm1
 New-CompressedBackup -SourcePath "C:\Backup" -DestinationPath "C:\Secure\Backup" -Encrypt -Password "SecurePass"
 ```
 
@@ -1019,7 +1049,7 @@ cd cpp
 # Select option 2 for parallel processing mode
 
 # Incremental backup testing
-powershell -Command "Import-Module .\IncrementalBackup.psm1; New-IncrementalBackup -BasePath 'C:\Temp' -BackupName 'TestBackup'"
+powershell -Command "Import-Module .\modules\IncrementalBackup.psm1; New-IncrementalBackup -BasePath 'C:\Temp' -BackupName 'TestBackup'"
 ```
 
 ### **Custom Locale Management**
