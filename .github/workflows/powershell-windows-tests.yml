@@ -1,6 +1,6 @@
 name: PowerShell Windows Tests
 
-on:
+"on":
   push:
     branches: [ main, develop ]
     paths:
@@ -55,6 +55,12 @@ jobs:
       run: |
         Write-Host "🔍 Validating PowerShell script syntax..." -ForegroundColor Cyan
         
+        # Verify working directory and list contents for debugging
+        Write-Host "Working directory: $(Get-Location)" -ForegroundColor Blue
+        Write-Host "Repository contents:" -ForegroundColor Blue
+        Get-ChildItem -Name | ForEach-Object { Write-Host "  $_" }
+        
+        # Define file arrays with explicit path checking
         $scriptFiles = @(
           "scripts/Reset-RegionalSettings.ps1",
           "group-policy/Deploy-RegionalSettings-GP.ps1"
@@ -64,6 +70,19 @@ jobs:
           "modules/BackupCompression.psm1",
           "modules/IncrementalBackup.psm1"
         )
+        
+        # Verify all expected directories exist
+        $requiredDirs = @("scripts", "group-policy", "modules")
+        foreach ($dir in $requiredDirs) {
+          if (-not (Test-Path $dir)) {
+            Write-Host "❌ Required directory not found: $dir" -ForegroundColor Red
+            Write-Host "Available directories:" -ForegroundColor Yellow
+            Get-ChildItem -Directory | ForEach-Object { Write-Host "  $($_.Name)" }
+            exit 1
+          } else {
+            Write-Host "✅ Directory found: $dir" -ForegroundColor Green
+          }
+        }
         
         $allValid = $true
         $totalFiles = 0
@@ -89,6 +108,13 @@ jobs:
               }
             } else {
               Write-Host "❌ $script - File not found" -ForegroundColor Red
+              Write-Host "Directory contents for $(Split-Path $script):" -ForegroundColor Yellow
+              $dir = Split-Path $script
+              if (Test-Path $dir) {
+                Get-ChildItem $dir | ForEach-Object { Write-Host "  $($_.Name)" }
+              } else {
+                Write-Host "  Directory does not exist" -ForegroundColor Red
+              }
               $allValid = $false
             }
           }
@@ -118,6 +144,13 @@ jobs:
               }
             } else {
               Write-Host "❌ $module - File not found" -ForegroundColor Red
+              Write-Host "Directory contents for $(Split-Path $module):" -ForegroundColor Yellow
+              $dir = Split-Path $module
+              if (Test-Path $dir) {
+                Get-ChildItem $dir | ForEach-Object { Write-Host "  $($_.Name)" }
+              } else {
+                Write-Host "  Directory does not exist" -ForegroundColor Red
+              }
               $allValid = $false
             }
           }
@@ -128,20 +161,26 @@ jobs:
         }
         
         Write-Host "`n📊 Syntax Validation Summary:" -ForegroundColor Cyan
-        Write-Host "Total Files: $totalFiles" -ForegroundColor White
-        Write-Host "Valid Files: $validFiles" -ForegroundColor Green
+        Write-Host "Total Files Expected: $totalFiles" -ForegroundColor White
+        Write-Host "Valid Files Found: $validFiles" -ForegroundColor Green
         
-        # Avoid division by zero
-        if ($totalFiles -gt 0) {
+        # Enhanced error handling for zero files
+        if ($totalFiles -eq 0) {
+          Write-Host "❌ CRITICAL: No files were processed!" -ForegroundColor Red
+          Write-Host "This indicates a workflow configuration issue." -ForegroundColor Red
+          exit 1
+        } elseif ($validFiles -eq 0) {
+          Write-Host "❌ CRITICAL: No valid files found!" -ForegroundColor Red
+          Write-Host "All expected files are either missing or have syntax errors." -ForegroundColor Red
+          exit 1
+        } else {
           $successRate = [math]::Round(($validFiles / $totalFiles) * 100, 1)
           Write-Host "Success Rate: $successRate%" -ForegroundColor White
-        } else {
-          Write-Host "Success Rate: N/A (No files found)" -ForegroundColor Yellow
-          $allValid = $false
         }
         
-        if (-not $allValid) {
+        if (-not $allValid -or $validFiles -lt $totalFiles) {
           Write-Host "`n❌ PowerShell syntax validation failed!" -ForegroundColor Red
+          Write-Host "Expected $totalFiles files, found $validFiles valid files" -ForegroundColor Red
           exit 1
         } else {
           Write-Host "`n✅ All PowerShell files have valid syntax!" -ForegroundColor Green
@@ -252,6 +291,19 @@ jobs:
       run: |
         Write-Host "🧪 Testing Regional Settings Script - Locale: ${{ matrix.locale }}" -ForegroundColor Cyan
         
+        # Verify script exists before testing
+        $scriptPath = "scripts\Reset-RegionalSettings.ps1"
+        if (-not (Test-Path $scriptPath)) {
+          Write-Host "❌ Script not found: $scriptPath" -ForegroundColor Red
+          Write-Host "Available files in scripts directory:" -ForegroundColor Yellow
+          if (Test-Path "scripts") {
+            Get-ChildItem "scripts" | ForEach-Object { Write-Host "  $($_.Name)" }
+          } else {
+            Write-Host "  scripts directory does not exist" -ForegroundColor Red
+          }
+          exit 1
+        }
+        
         # Create a test configuration for dry run
         $testConfig = @{
           TestMode = $true
@@ -267,10 +319,14 @@ jobs:
         try {
           # Test script syntax first
           Write-Host "Testing script syntax..." -ForegroundColor Yellow
-          $errors = $null
-          $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content "scripts\Reset-RegionalSettings.ps1" -Raw), [ref]$errors)
+          $parseErrors = $null
+          $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $scriptPath -Raw), [ref]$parseErrors)
           
-          if ($errors.Count -gt 0) {
+          if ($parseErrors.Count -gt 0) {
+            Write-Host "❌ Script has syntax errors:" -ForegroundColor Red
+            foreach ($error in $parseErrors) {
+              Write-Host "  $error" -ForegroundColor Red
+            }
             throw "Script has syntax errors"
           }
           
@@ -284,10 +340,16 @@ jobs:
           Write-Host "❌ Script test failed for ${{ matrix.locale }}: $($_.Exception.Message)" -ForegroundColor Red
           Write-Host "Stack trace: $($_.ScriptStackTrace)" -ForegroundColor Red
           
-          # Show script content for debugging if syntax error
-          if ($_.Exception.Message -like "*syntax*") {
-            Write-Host "First 20 lines of script:" -ForegroundColor Yellow
-            Get-Content "scripts\Reset-RegionalSettings.ps1" -TotalCount 20 | ForEach-Object { Write-Host "  $_" }
+          # Enhanced debugging information
+          Write-Host "`nDebugging Information:" -ForegroundColor Yellow
+          Write-Host "Working Directory: $(Get-Location)" -ForegroundColor Yellow
+          Write-Host "Script Path: $scriptPath" -ForegroundColor Yellow
+          Write-Host "Script Exists: $(Test-Path $scriptPath)" -ForegroundColor Yellow
+          
+          if (Test-Path $scriptPath) {
+            Write-Host "Script Size: $((Get-Item $scriptPath).Length) bytes" -ForegroundColor Yellow
+            Write-Host "First 10 lines of script:" -ForegroundColor Yellow
+            Get-Content $scriptPath -TotalCount 10 | ForEach-Object { Write-Host "  $_" }
           }
           
           exit 1
@@ -304,13 +366,30 @@ jobs:
       run: |
         Write-Host "🧪 Testing Group Policy Script - Profile: ${{ matrix.profile }}" -ForegroundColor Cyan
         
+        # Verify GP script exists before testing
+        $gpScriptPath = "group-policy\Deploy-RegionalSettings-GP.ps1"
+        if (-not (Test-Path $gpScriptPath)) {
+          Write-Host "❌ GP script not found: $gpScriptPath" -ForegroundColor Red
+          Write-Host "Available files in group-policy directory:" -ForegroundColor Yellow
+          if (Test-Path "group-policy") {
+            Get-ChildItem "group-policy" | ForEach-Object { Write-Host "  $($_.Name)" }
+          } else {
+            Write-Host "  group-policy directory does not exist" -ForegroundColor Red
+          }
+          exit 1
+        }
+        
         try {
           # Test GP script syntax first
           Write-Host "Testing GP script syntax..." -ForegroundColor Yellow
-          $errors = $null
-          $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content "group-policy\Deploy-RegionalSettings-GP.ps1" -Raw), [ref]$errors)
+          $parseErrors = $null
+          $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $gpScriptPath -Raw), [ref]$parseErrors)
           
-          if ($errors.Count -gt 0) {
+          if ($parseErrors.Count -gt 0) {
+            Write-Host "❌ GP script has syntax errors:" -ForegroundColor Red
+            foreach ($error in $parseErrors) {
+              Write-Host "  $error" -ForegroundColor Red
+            }
             throw "GP script has syntax errors"
           }
           
@@ -324,10 +403,16 @@ jobs:
           Write-Host "❌ Group Policy script test failed: $($_.Exception.Message)" -ForegroundColor Red
           Write-Host "Stack trace: $($_.ScriptStackTrace)" -ForegroundColor Red
           
-          # Show script content for debugging if syntax error
-          if ($_.Exception.Message -like "*syntax*") {
-            Write-Host "First 20 lines of GP script:" -ForegroundColor Yellow
-            Get-Content "group-policy\Deploy-RegionalSettings-GP.ps1" -TotalCount 20 | ForEach-Object { Write-Host "  $_" }
+          # Enhanced debugging information
+          Write-Host "`nDebugging Information:" -ForegroundColor Yellow
+          Write-Host "Working Directory: $(Get-Location)" -ForegroundColor Yellow
+          Write-Host "GP Script Path: $gpScriptPath" -ForegroundColor Yellow
+          Write-Host "GP Script Exists: $(Test-Path $gpScriptPath)" -ForegroundColor Yellow
+          
+          if (Test-Path $gpScriptPath) {
+            Write-Host "GP Script Size: $((Get-Item $gpScriptPath).Length) bytes" -ForegroundColor Yellow
+            Write-Host "First 10 lines of GP script:" -ForegroundColor Yellow
+            Get-Content $gpScriptPath -TotalCount 10 | ForEach-Object { Write-Host "  $_" }
           }
           
           exit 1
