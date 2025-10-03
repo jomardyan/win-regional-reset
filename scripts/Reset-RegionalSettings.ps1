@@ -296,18 +296,24 @@ function Start-PerformanceMonitoring {
 }
 
 function Stop-PerformanceMonitoring {
-    $endTime = Get-Date
-    $endMemory = [System.GC]::GetTotalMemory($false)
-    $endProcess = Get-Process -Id $PID
-    
-    $executionTime = $endTime - $script:StartTime
-    $memoryDiff = $endMemory - $script:StartMemory
-    $cpuTime = $endProcess.TotalProcessorTime - $script:StartProcess.TotalProcessorTime
-    
-    Write-Log "Performance Summary:" "INFO" "Blue"
-    Write-Log "  Execution Time: $($executionTime.TotalSeconds.ToString('F2')) seconds" "INFO" "Blue"
-    Write-Log "  Memory Usage: $([math]::Round($memoryDiff / 1MB, 2)) MB" "INFO" "Blue"
-    Write-Log "  CPU Time: $($cpuTime.TotalMilliseconds) ms" "INFO" "Blue"
+    try {
+        $endTime = Get-Date
+        $endMemory = [System.GC]::GetTotalMemory($false)
+        $endProcess = Get-Process -Id $PID -ErrorAction Stop
+        
+        $executionTime = $endTime - $script:StartTime
+        $memoryDiff = $endMemory - $script:StartMemory
+        $cpuTime = $endProcess.TotalProcessorTime - $script:StartProcess.TotalProcessorTime
+        
+        Write-Log "Performance Summary:" "INFO" "Blue"
+        Write-Log "  Execution Time: $($executionTime.TotalSeconds.ToString('F2')) seconds" "INFO" "Blue"
+        Write-Log "  Memory Usage: $([math]::Round($memoryDiff / 1MB, 2)) MB" "INFO" "Blue"
+        Write-Log "  CPU Time: $($cpuTime.TotalMilliseconds) ms" "INFO" "Blue"
+    }
+    catch {
+        Write-Log "Performance monitoring error: $($_.Exception.Message)" "WARN" "Yellow"
+        Write-Log "  Execution Time: $((Get-Date) - $script:StartTime).TotalSeconds.ToString('F2')) seconds" "INFO" "Blue"
+    }
 }
 
 # Function to remove registry values with retry logic
@@ -494,7 +500,9 @@ try {
     Write-Log ""
     Write-Log "Starting regional settings reset..." "INFO" "Green"
     $startTime = Get-Date
-    Start-PerformanceMonitoring    # Validate write access to registry
+    Start-PerformanceMonitoring
+    
+    # Validate write access to registry
     try {
         $testPath = "HKCU:\Software\RegionalSettingsTest"
         New-Item -Path $testPath -Force | Out-Null
@@ -505,12 +513,6 @@ try {
         Write-Log "Unable to write to registry. Please ensure you have proper permissions." "ERROR" "Red"
         exit 1
     }
-}
-catch {
-    Write-Log "Critical error during initialization: $($_.Exception.Message)" "ERROR" "Red"
-    Write-Log "Stack trace: $($_.ScriptStackTrace)" "ERROR" "Red"
-    exit 1
-}
 
     # Registry paths for regional settings
     $RegPaths = @{

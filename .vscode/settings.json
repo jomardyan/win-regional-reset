@@ -1,5 +1,5 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
     "python-envs.pythonProjects": [],
-    "cmake.sourceDirectory": "/workspaces/win-reginnal-reset/cpp"
+    "cmake.sourceDirectory": "/workspaces/win-regional-reset/cpp"
 }

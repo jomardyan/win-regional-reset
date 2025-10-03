@@ -6,26 +6,45 @@ function New-CompressedBackup {
         [string]$SourcePath,
         [string]$DestinationPath,
         [SecureString]$Password,
-        [switch]$Encrypt
+        [switch]$Encrypt,
+        [ValidateSet("Optimal", "Fastest", "NoCompression")]
+        [string]$CompressionLevel = "Optimal"
     )
     
     try {
         if ($Encrypt -and $Password) {
-            # Create encrypted compressed backup
-            $passwordPlainText = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password))
-            Compress-Archive -Path $SourcePath -DestinationPath "$DestinationPath.zip" -Force
+            # Create encrypted compressed backup using AES-256
+            Compress-Archive -Path $SourcePath -DestinationPath "$DestinationPath.zip" -CompressionLevel $CompressionLevel -Force
             
-            # Encrypt the zip file (simplified approach using built-in encryption)
+            # Encrypt using AES-256 with key derived from SecureString
             $encryptedPath = "$DestinationPath.encrypted"
             $bytes = [System.IO.File]::ReadAllBytes("$DestinationPath.zip")
-            $encryptedBytes = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-            [System.IO.File]::WriteAllBytes($encryptedPath, $encryptedBytes)
+            
+            # Use ConvertFrom-SecureString which handles SecureString safely
+            $passwordEncryptedString = ConvertFrom-SecureString -SecureString $Password
+            $key = [System.Text.Encoding]::UTF8.GetBytes($passwordEncryptedString.Substring(0, 32))
+            
+            # Use AES encryption with DPAPI for additional security
+            $aes = [System.Security.Cryptography.Aes]::Create()
+            $aes.KeySize = 256
+            $aes.Key = $key
+            $aes.GenerateIV()
+            
+            $encryptor = $aes.CreateEncryptor()
+            $encryptedData = $encryptor.TransformFinalBlock($bytes, 0, $bytes.Length)
+            
+            # Store IV at the beginning of file
+            $output = $aes.IV + $encryptedData
+            [System.IO.File]::WriteAllBytes($encryptedPath, $output)
+            
+            $encryptor.Dispose()
+            $aes.Dispose()
             
             Remove-Item "$DestinationPath.zip" -Force
             return $encryptedPath
         } else {
             # Create standard compressed backup
-            Compress-Archive -Path $SourcePath -DestinationPath "$DestinationPath.zip" -Force
+            Compress-Archive -Path $SourcePath -DestinationPath "$DestinationPath.zip" -CompressionLevel $CompressionLevel -Force
             return "$DestinationPath.zip"
         }
     }

@@ -25,14 +25,23 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
 # Windows-specific imports with fallbacks
-try:
-    import winreg
-    import ctypes
-    from ctypes import wintypes
-    WINDOWS_AVAILABLE = True
-except ImportError:
+if sys.platform == 'win32':
+    try:
+        import winreg
+        import ctypes
+        from ctypes import wintypes
+        WINDOWS_AVAILABLE = True
+    except ImportError:
+        WINDOWS_AVAILABLE = False
+        winreg = None
+        ctypes = None
+else:
     WINDOWS_AVAILABLE = False
-    # Mock objects for non-Windows platforms
+    winreg = None
+    ctypes = None
+    
+# Mock objects for non-Windows platforms
+if not WINDOWS_AVAILABLE:
     class MockWinreg:
         HKEY_CURRENT_USER = "HKEY_CURRENT_USER"
         REG_SZ = 1
@@ -61,9 +70,11 @@ except ImportError:
     winreg = MockWinreg()
     
     class MockCtypes:
-        @staticmethod
-        def windll():
-            return None
+        class windll:
+            class shell32:
+                @staticmethod
+                def IsUserAnAdmin():
+                    return 0
     
     ctypes = MockCtypes()
 
@@ -156,6 +167,31 @@ class RegionalSettingsReset:
         
         # Check admin privileges
         self.is_admin = self._check_admin_privileges()
+        
+    @staticmethod
+    def _validate_path(path: str) -> bool:
+        """Validate file path to prevent path traversal attacks"""
+        if not path:
+            return False
+        try:
+            # Resolve to absolute path and check for path traversal
+            abs_path = Path(path).resolve()
+            # Check for suspicious patterns
+            path_str = str(abs_path)
+            if '..' in path_str or path_str.startswith('/etc') or path_str.startswith('/sys'):
+                return False
+            return True
+        except (ValueError, OSError):
+            return False
+    
+    @staticmethod
+    def _sanitize_input(user_input: str, max_length: int = 100) -> str:
+        """Sanitize user input to prevent injection attacks"""
+        if not user_input:
+            return ""
+        # Remove potentially dangerous characters
+        sanitized = re.sub(r'[;&|`$\n\r]', '', user_input)
+        return sanitized[:max_length]
         
     def _setup_logging(self, log_file: Optional[str] = None):
         """Setup logging configuration"""

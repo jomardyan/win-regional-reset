@@ -237,28 +237,62 @@ private:
     }
     
 #ifdef _WIN32
-    bool setRegistryValue(const string& key, const string& valueName, const string& valueData, DWORD type = REG_SZ) {
+    // RAII wrapper for registry key
+    class RegistryKeyGuard {
+    private:
         HKEY hKey;
-        LONG result = RegCreateKeyExA(HKEY_CURRENT_USER, key.c_str(), 0, NULL, 0, KEY_SET_VALUE, NULL, &hKey, NULL);
-        if (result != ERROR_SUCCESS) {
+        bool valid;
+    public:
+        RegistryKeyGuard() : hKey(NULL), valid(false) {}
+        
+        bool open(const string& key, REGSAM access = KEY_SET_VALUE) {
+            LONG result = RegCreateKeyExA(HKEY_CURRENT_USER, key.c_str(), 0, NULL, 0, access, NULL, &hKey, NULL);
+            valid = (result == ERROR_SUCCESS);
+            return valid;
+        }
+        
+        HKEY get() const { return hKey; }
+        bool isValid() const { return valid; }
+        
+        ~RegistryKeyGuard() {
+            if (valid && hKey != NULL) {
+                RegCloseKey(hKey);
+            }
+        }
+        
+        // Prevent copying
+        RegistryKeyGuard(const RegistryKeyGuard&) = delete;
+        RegistryKeyGuard& operator=(const RegistryKeyGuard&) = delete;
+    };
+    
+    bool setRegistryValue(const string& key, const string& valueName, const string& valueData, DWORD type = REG_SZ) {
+        RegistryKeyGuard keyGuard;
+        if (!keyGuard.open(key)) {
             logger.error("Failed to open registry key: " + key);
             return false;
         }
         
+        LONG result;
         if (type == REG_SZ) {
-            result = RegSetValueExA(hKey, valueName.c_str(), 0, REG_SZ, (const BYTE*)valueData.c_str(), valueData.size() + 1);
+            result = RegSetValueExA(keyGuard.get(), valueName.c_str(), 0, REG_SZ, (const BYTE*)valueData.c_str(), static_cast<DWORD>(valueData.size() + 1));
         } else if (type == REG_DWORD) {
-            DWORD value = stoul(valueData);
-            result = RegSetValueExA(hKey, valueName.c_str(), 0, REG_DWORD, (const BYTE*)&value, sizeof(DWORD));
+            try {
+                DWORD value = stoul(valueData);
+                result = RegSetValueExA(keyGuard.get(), valueName.c_str(), 0, REG_DWORD, (const BYTE*)&value, sizeof(DWORD));
+            } catch (const exception& e) {
+                logger.error("Invalid DWORD value: " + valueData + " - " + e.what());
+                return false;
+            }
+        } else {
+            logger.error("Unsupported registry type: " + to_string(type));
+            return false;
         }
-        
-        RegCloseKey(hKey);
         
         if (result == ERROR_SUCCESS) {
             logger.debug("Set registry: " + key + "\\" + valueName + " = " + valueData);
             return true;
         } else {
-            logger.error("Failed to set registry value: " + key + "\\" + valueName);
+            logger.error("Failed to set registry value: " + key + "\\" + valueName + " (Error: " + to_string(result) + ")");
             return false;
         }
     }
