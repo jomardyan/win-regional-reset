@@ -88,9 +88,20 @@ public:
     void log(const string& level, const string& message) {
         if (!enabled) return;
         
-        lock_guard<mutex> lock(logMutex);
+        // Build strings outside of lock for better performance
         auto now = time(nullptr);
         auto tm = *localtime(&now);
+        
+        stringstream timestamp;
+        timestamp << put_time(&tm, "%Y-%m-%d %H:%M:%S");
+        string timeStr = timestamp.str();
+        
+        stringstream logEntry;
+        logEntry << "[" << timeStr << "] [" << level << "] " << message;
+        string logStr = logEntry.str();
+        
+        // Lock only for actual output (minimizes contention)
+        lock_guard<mutex> lock(logMutex);
         
         // Console output with colors
         string color = "\033[0m"; // Default
@@ -99,14 +110,12 @@ public:
         else if (level == "INFO") color = "\033[32m"; // Green
         else if (level == "DEBUG") color = "\033[36m"; // Cyan
         
-        cout << color << "[" << put_time(&tm, "%Y-%m-%d %H:%M:%S") << "] [" 
-             << level << "] " << message << "\033[0m" << endl;
+        cout << color << logStr << "\033[0m" << endl;
         
         // File output
         ofstream logStream(logFile, ios::app);
         if (logStream.is_open()) {
-            logStream << "[" << put_time(&tm, "%Y-%m-%d %H:%M:%S") << "] [" 
-                     << level << "] " << message << endl;
+            logStream << logStr << endl;
             logStream.close();
         }
     }
@@ -354,14 +363,21 @@ public:
         perfMonitor.start();
         
         if (supportedLocales.find(locale) == supportedLocales.end()) {
-            logger.error("Unsupported locale: " + locale);
+            // Optimize string concatenation
+            string error = "Unsupported locale: ";
+            error.reserve(error.size() + locale.size());
+            error += locale;
+            logger.error(error);
             listLocales();
             errorCount++;
             return false;
         }
         
         const LocaleInfo& info = supportedLocales[locale];
-        logger.info("Applying settings for locale: " + locale + " (" + info.name + ")");
+        // Use stringstream for efficient multi-part concatenation
+        stringstream logMsg;
+        logMsg << "Applying settings for locale: " << locale << " (" << info.name << ")";
+        logger.info(logMsg.str());
         
         if (!force) {
             cout << "\nThis will change all regional settings to: " << info.name << "\n";

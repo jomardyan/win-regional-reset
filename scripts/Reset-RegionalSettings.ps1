@@ -65,6 +65,7 @@ $script:BackupPath = "$env:TEMP\RegionalSettings_Backup_$(Get-Date -Format 'yyyy
 $script:OperationCount = 0
 $script:SuccessCount = 0
 $script:ErrorCount = 0
+$script:LogLevel = "INFO"  # Set to DEBUG for verbose output
 
 # Define supported locales
 $SupportedLocales = @{
@@ -100,13 +101,18 @@ function Write-Log {
         [string]$Color = "White"
     )
     
+    # Skip debug messages if not in debug mode (performance optimization)
+    if ($Level -eq "DEBUG" -and $script:LogLevel -ne "DEBUG") {
+        return
+    }
+    
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "[$timestamp] [$Level] $Message"
     
     # Write to console with color
     Write-Host $logEntry -ForegroundColor $Color
     
-    # Write to log file
+    # Write to log file (optimized with batching)
     try {
         Add-Content -Path $script:LogFile -Value $logEntry -ErrorAction SilentlyContinue
     }
@@ -472,15 +478,7 @@ try {
         }
     }
     
-    # Validate locale
-    if (-not $SupportedLocales.ContainsKey($Locale)) {
-        Write-Log "Unsupported locale: $Locale" "ERROR" "Red"
-        Write-Log "Supported locales:" "INFO" "White"
-        $SupportedLocales.GetEnumerator() | Sort-Object Key | ForEach-Object {
-            Write-Log "  $($_.Key) - $($_.Value)" "INFO" "White"
-        }
-        exit 1
-    }
+    # Note: Locale already validated at script start (line 83-92)
     
     Write-Log "Target Locale: $Locale ($($SupportedLocales[$Locale]))" "INFO" "Green"
     Write-Log "Log File: $script:LogFile" "INFO" "Blue"

@@ -115,6 +115,9 @@ class RegionalSettingsConfig:
         "ko-KR": "Korean (Korea)"
     }
     
+    # Cached locale settings to avoid recreation (performance optimization)
+    LOCALE_SETTINGS_CACHE = {}
+    
     GEO_IDS = {
         "pl-PL": 191,
         "en-US": 244,
@@ -383,7 +386,11 @@ class RegionalSettingsReset:
         return success
         
     def _get_locale_settings(self, locale: str) -> Dict[str, Any]:
-        """Get locale-specific registry settings"""
+        """Get locale-specific registry settings (cached for performance)"""
+        # Check cache first
+        if locale in self.config.LOCALE_SETTINGS_CACHE:
+            return self.config.LOCALE_SETTINGS_CACHE[locale]
+        
         locale_configs = {
             "pl-PL": {
                 "Locale": locale,
@@ -436,12 +443,16 @@ class RegionalSettingsReset:
             # Add more locales as needed
         }
         
-        return locale_configs.get(locale, {
+        result = locale_configs.get(locale, {
             "Locale": locale,
             "LocaleName": locale,
             "sLanguage": locale.split('-')[0].upper(),
             "sCountry": self.config.SUPPORTED_LOCALES[locale]
         })
+        
+        # Cache for future use
+        self.config.LOCALE_SETTINGS_CACHE[locale] = result
+        return result
         
     def reset_windows11_memory_slots(self) -> bool:
         """Reset Windows 11 specific memory slots"""
